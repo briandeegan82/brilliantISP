@@ -13,7 +13,7 @@ sensor_info:
   bit_depth: 12
   width: 1920
   height: 1536
-  output_bit_depth: 16
+  output_bit_depth: 8
   sensor: "SVS"
   endian_type: "ieee-be"
   data_format: "uint32"
@@ -21,12 +21,14 @@ sensor_info:
   embedded_rows_bottom: 0
 
 
+# verified to match the SVS camera's companding curve
 companding:
   is_enable: true
-  pedestal: 0 #240
+  is_debug: false
+  pedestal: 0
   companded: True
   companded_pin: [1, 256, 512, 831, 994, 1319, 1984, 2530, 2871, 2968, 3258, 3541, 3855]
-  companded_pout: [1, 256, 1024, 3900, 7800, 23400, 87315, 174630, 349260, 548241, 1736000, 5208000, 16777200]
+  companded_pout: [1, 256, 1024, 3900, 7800, 23400, 87315, 174630, 349260, 548241, 1736000, 5208000, 16777200] #, 16777200]
   #input_range: 65535
   #output_range: 1048575
   #num_kneepoints: 10
@@ -34,7 +36,7 @@ companding:
   is_save: false
 
 crop:
-  is_enable: true
+  is_enable: false
   is_debug: false
   crop_x_start: 1
   crop_y_start: 1
@@ -43,17 +45,17 @@ crop:
   is_save: false  
 
 dead_pixel_correction: 
-  is_enable: false
-  dp_threshold: 80
-  is_debug: true
+  is_enable: true
+  dp_threshold: 64
+  is_debug: false
   is_save: false
 
 black_level_correction:
-  is_enable: false
-  r_offset: 0
-  gr_offset: 0
-  gb_offset: 0
-  b_offset: 0
+  is_enable: true
+  r_offset: 16
+  gr_offset: 16
+  gb_offset: 16
+  b_offset: 16
   is_linear: true
   r_sat: 4095
   gr_sat: 4095
@@ -69,13 +71,13 @@ oecf:
   is_save: false
 
 digital_gain:
-  is_debug: true
-  is_auto: false
+  is_debug: false
+  is_auto: true
   is_enable: true
   # Array of pre-define Gains
-  gain_array: [0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
+  gain_array: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
   # Index of default gain
-  current_gain: 0
+  current_gain: 7
   ae_feedback: 0
   is_save: false
 
@@ -85,20 +87,20 @@ lens_shading_correction:
 
 bayer_noise_reduction:
   is_enable: true
-  filter_window: 9
-  r_std_dev_s: 1
-  r_std_dev_r: 0.1
-  g_std_dev_s: 1
-  g_std_dev_r: 0.08
-  b_std_dev_s: 1
+  filter_window: 5
+  r_std_dev_s: 0.8
+  r_std_dev_r: 0.15
+  g_std_dev_s: 0.8
+  g_std_dev_r: 0.15
+  b_std_dev_s: 0.8
   b_std_dev_r: 0.1
   is_save: false
 
 auto_white_balance:
   is_enable: true
-  is_debug: true
-  underexposed_percentage: 0.01
-  overexposed_percentage: 0.01
+  is_debug: false
+  underexposed_percentage: 0.05
+  overexposed_percentage: 0.05
   algorithm: "pca"
   # grey_world, norm_2, pca
   percentage: 3.5 # pca
@@ -106,10 +108,10 @@ auto_white_balance:
 white_balance:
   is_enable: true
   # is_auto refers to auto white balance module
-  is_debug: true
+  is_debug: false
   is_auto: true
-  r_gain: 1.4 #1.24609375
-  b_gain: 1.4 #2.80859375
+  r_gain: 1.2 #1.24609375
+  b_gain: 1.34 #2.80859375
   is_save: false
 
 demosaic:
@@ -128,37 +130,36 @@ gamma_correction:
   is_save: false
 
 auto_exposure:
-  is_enable: false
-  is_debug: true
-  center_illuminance: 90
+  is_enable: true
+  is_debug: false
+  center_illuminance: 4095
   histogram_skewness: 0.9
 
 # Example usage in ISP pipeline
 hdr_durand:
   is_enable: true
   is_save: True
-  is_debug: True
-  sigma_space: 20
-  sigma_color: 0.4
+  is_debug: false
+  sigma_space: 8.0
+  sigma_color: 8.0
   contrast_factor: 1.5
   downsample_factor: 4
 
 
 color_space_conversion: 
-  conv_standard: 12
+  conv_standard: 2
   # Bt.709 HD =   1
   # Bt.601/4407 = 2
   is_save: false
 
 color_saturation_enhancement:
   is_enable: true
-  saturation_gain: 1.4
-
+  saturation_gain: 1.8
 
 ldci:
   is_enable: true
   clip_limit: 2.0
-  wind: 16
+  wind: 128
   is_save: false
 
 sharpen:
@@ -180,14 +181,14 @@ rgb_conversion:
   is_save: false
 
 scale:
-  is_enable: false
-  is_debug: true
-  new_width: 1920
-  new_height: 1080   
-  is_hardware: true
+  is_enable: true
+  is_debug: false
+  new_width: 1280
+  new_height: 1024   
+  is_hardware: false
   # Nearest_Neighbor # Bilinear
-  algorithm: "Nearest_Neighbor"
-  upscale_method: "Nearest_Neighbor"
+  algorithm: "Bilinear"
+  upscale_method: "Bilinear"
   downscale_method: "Bilinear"  
   is_save: false
 

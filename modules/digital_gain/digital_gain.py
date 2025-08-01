@@ -36,7 +36,7 @@ class DigitalGain:
         """
 
         # get desired param from config
-        bpp = self.sensor_info["output_bit_depth"]
+        bpp = self.sensor_info["hdr_bit_depth"]
         # dg = self.param_dga['dg_gain']
 
         # converting to float image
@@ -64,7 +64,7 @@ class DigitalGain:
         if self.is_debug:
             print("   - DG  - Applied Gain = ", self.gains_array[self.current_gain])
 
-        # np.uint16 bit to contain the bpp bit raw
+        # np.uint32 bit to contain the bpp bit raw
         self.img = np.uint32(np.clip(self.img, 0, ((2**bpp) - 1)))
         return self.img
 
@@ -78,7 +78,7 @@ class DigitalGain:
                 self.img,
                 "Out_digital_gain_",
                 self.platform,
-                self.sensor_info["bit_depth"],
+                self.sensor_info["hdr_bit_depth"],
                 self.sensor_info["bayer_pattern"],
             )
 

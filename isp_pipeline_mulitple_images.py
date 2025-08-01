@@ -10,8 +10,10 @@ from infinite_isp import InfiniteISP
 
 from util.config_utils import parse_file_name, extract_raw_metadata
 
-DATASET_PATH = "./in_frames/normal/data/"
-CONFIG_PATH = "./config/configs.yml"
+DATASET_PATH = "/media/brian/ssd-drive/drive/output/191-G-NUIG.RAW.DAI_3MPX_FV.BIN.20250723.134409_extracted/"
+CONFIG_PATH = "./config/svs_cam.yml"
+OUTPUT_PATH = "/media/brian/ssd-drive/drive/output/FV_ISP/"  # User can modify this to define custom output folder
+# Examples: OUTPUT_PATH = "./my_outputs/", OUTPUT_PATH = "/path/to/custom/folder/"
 VIDEO_MODE = False
 EXTRACT_SENSOR_INFO = True
 UPDATE_BLC_WB = True
@@ -27,7 +29,10 @@ def video_processing():
     raw_files = [f_name for f_name in os.listdir(DATASET_PATH) if ".raw" in f_name]
     raw_files.sort()
 
-    infinite_isp = InfiniteISP(DATASET_PATH, CONFIG_PATH)
+    print(f"Processing {len(raw_files)} video frames...")
+    print(f"Output directory: {OUTPUT_PATH}")
+
+    infinite_isp = InfiniteISP(DATASET_PATH, CONFIG_PATH, OUTPUT_PATH)
 
     # set generate_tv flag to false
     infinite_isp.c_yaml["platform"]["generate_tv"] = False
@@ -60,10 +65,13 @@ def dataset_processing():
         if (Path(DATASET_PATH, x).suffix in [".raw", ".NEF", ".dng", ".nef"])
     ]
 
-    infinite_isp = InfiniteISP(DATASET_PATH, default_config)
+    infinite_isp = InfiniteISP(DATASET_PATH, default_config, OUTPUT_PATH)
 
     # set generate_tv flag to false
     infinite_isp.c_yaml["platform"]["generate_tv"] = False
+
+    print(f"Processing {len(raw_images)} dataset images...")
+    print(f"Output directory: {OUTPUT_PATH}")
 
     is_default_config = True
 

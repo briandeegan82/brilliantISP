@@ -227,10 +227,16 @@ def get_image_from_yuv_format_conversion(yuv_img, height, width, yuv_custom_form
     return yuv_img
 
 
-def save_pipeline_output(img_name, output_img, config_file):
+def save_pipeline_output(img_name, output_img, config_file, output_dir=None):
     """
     Saves the output image (png) and config file in OUTPUT_DIR
     """
+    
+    # Use provided output_dir or default to OUTPUT_DIR
+    save_dir = output_dir if output_dir else OUTPUT_DIR
+    
+    # Ensure output directory exists
+    os.makedirs(save_dir, exist_ok=True)
 
     # Time Stamp for output filename
     dt_string = datetime.now().strftime("_%Y%m%d_%H%M%S")
@@ -240,7 +246,7 @@ def save_pipeline_output(img_name, output_img, config_file):
 
     # Storing configuration file for output image
     with open(
-        OUTPUT_DIR + img_name + dt_string + ".yaml", "w", encoding="utf-8"
+        save_dir + img_name + dt_string + ".yaml", "w", encoding="utf-8"
     ) as file:
         yaml.dump(
             config_file,
@@ -251,7 +257,7 @@ def save_pipeline_output(img_name, output_img, config_file):
         )
 
     # Save Image as .png
-    plt.imsave(OUTPUT_DIR + img_name + dt_string + ".png", output_img)
+    plt.imsave(save_dir + img_name + dt_string + ".png", output_img)
 
 
 # utilities to save the config_automate exactly as config.yml

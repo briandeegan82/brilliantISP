@@ -23,7 +23,7 @@ class AutoExposure:
         self.histogram_skewness_range = parm_ae["histogram_skewness"]
         self.sensor_info = sensor_info
         self.param_ae = parm_ae
-        self.bit_depth = sensor_info["bit_depth"]
+        self.hdr_bit_depth = sensor_info["hdr_bit_depth"]
 
         # Pipeline modules included in AE Feedback Loop
         # (White Balance) wb module is renamed to wbc (white balance correction)
@@ -34,8 +34,8 @@ class AutoExposure:
         Get Correct Exposure by Adjusting Digital Gain
         """
         # Convert Image into 8-bit for AE Calculation
-        self.img = self.img >> (self.bit_depth - 8)
-        self.bit_depth = 8
+        self.img = self.img >> (self.hdr_bit_depth - 8)
+        #self.hdr_bit_depth = 8
 
         # calculate the exposure metric
         return self.determine_exposure()
@@ -77,7 +77,7 @@ class AutoExposure:
         """
         # Each RGB pixels with [0.299, 0.587, 0.144] to get its luminance
         grey_img = np.clip(
-            np.dot(img[..., :3], [0.299, 0.587, 0.144]), 0, (2**self.bit_depth)
+            np.dot(img[..., :3], [0.299, 0.587, 0.144]), 0, (2**self.hdr_bit_depth)
         ).astype(np.uint16)
         return grey_img, np.average(grey_img, axis=(0, 1))
 

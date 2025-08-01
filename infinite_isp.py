@@ -12,6 +12,7 @@ import yaml
 import rawpy
 from matplotlib import pyplot as plt
 import tifffile as tiff
+import os
 
 import util.utils as util
 
@@ -56,12 +57,15 @@ class InfiniteISP:
     Infinite-ISP Pipeline
     """
 
-    def __init__(self, data_path, config_path):
+    def __init__(self, data_path, config_path, output_path=None):
         """
         Constructor: Initialize with config and raw file path
         and Load configuration parameter from yaml file
         """
         self.data_path = data_path
+        self.output_path = output_path if output_path else "out_frames/"
+        # Ensure output directory exists
+        os.makedirs(self.output_path, exist_ok=True)
         self.load_config(config_path)
 
     def load_config(self, config_path):
@@ -118,7 +122,7 @@ class InfiniteISP:
         path_object = Path(self.data_path, self.raw_file)
         raw_path = str(path_object.resolve())
         self.in_file = path_object.stem
-        self.out_file = "Out_" + self.in_file
+        self.out_file = "Out_" + self.in_file  # Just the filename, not the full path
 
         self.platform["in_file"] = self.in_file
         self.platform["out_file"] = self.out_file
@@ -150,6 +154,7 @@ class InfiniteISP:
         else:
             img = rawpy.imread(raw_path)
             self.raw = img.raw_image
+    
 
     def run_pipeline(self, visualize_output=True):
         """
@@ -204,12 +209,12 @@ class InfiniteISP:
 
         # =====================================================================
         # Auto White Balance
-        awb = AWB(bnr_raw, self.sensor_info, self.parm_awb)
+        awb = AWB(bnr_raw, self.sensor_info, self.parm_awb, self.parm_wbc)
         self.awb_gains = awb.execute()
 
         # =====================================================================
         # White balancing
-        wbc = WB(bnr_raw, self.platform, self.sensor_info, self.parm_wbc)
+        wbc = WB(bnr_raw, self.platform, self.sensor_info, self.parm_wbc, self.awb_gains)
         wb_raw = wbc.execute()
 
 
@@ -349,7 +354,7 @@ class InfiniteISP:
             # If both RGB_C and YUV_C are enabled. Infinite-ISP will generate
             # an output but it will be an invalid image.
 
-            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml)
+            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.output_path)
 
     def execute(self, img_path=None):
         """

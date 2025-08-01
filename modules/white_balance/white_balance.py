@@ -16,7 +16,7 @@ class WhiteBalance:
     White balance Module
     """
 
-    def __init__(self, img, platform, sensor_info, parm_wbc):
+    def __init__(self, img, platform, sensor_info, parm_wbc, awb_gains):
         """
         Class Constructor
         """
@@ -31,6 +31,7 @@ class WhiteBalance:
         self.bayer = self.sensor_info["bayer_pattern"]
         self.bpp = self.sensor_info["hdr_bit_depth"]
         self.raw = None
+        self.awb_gains = awb_gains
 
     def apply_wb_parameters(self):
         """
@@ -38,8 +39,8 @@ class WhiteBalance:
         """
 
         # get config params
-        redgain = self.parm_wbc["r_gain"]
-        bluegain = self.parm_wbc["b_gain"]
+        redgain = self.awb_gains[0]
+        bluegain = self.awb_gains[1]
         self.raw = np.float32(self.img)
 
         if self.is_debug:
@@ -59,7 +60,13 @@ class WhiteBalance:
             self.raw[1::2, ::2] = self.raw[1::2, ::2] * redgain
             self.raw[::2, 1::2] = self.raw[::2, 1::2] * bluegain
 
-        raw_whitebal = np.uint32(np.clip(self.raw, 0, (2**self.bpp) - 1))
+        if np.max(self.raw) >= 2**self.bpp:
+            print(f"  Warning: Raw image values exceed {self.bpp} bits.")
+            print(f"  Max value: {np.max(self.raw)}")
+            print(f"  Clipping values to {self.bpp} bits.")
+            self.raw = np.clip(self.raw, 0, (2**self.bpp) - 1)
+        
+        raw_whitebal = np.uint32(self.raw)
 
         return raw_whitebal
 

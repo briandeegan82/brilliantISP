@@ -9,6 +9,7 @@ class PiecewiseCurve:
     def __init__(self, img, platform, sensor_info, parm_cmpd):
         self.img = img
         self.enable = parm_cmpd["is_enable"]
+        self.is_debug = parm_cmpd["is_debug"]
         self.sensor_info = sensor_info
         self.bit_depth = sensor_info["bit_depth"]
         self.parm_cmpd = parm_cmpd
@@ -18,23 +19,13 @@ class PiecewiseCurve:
         self.platform = platform
     
     def generate_decompanding_lut(companded_pin, companded_pout, max_input_value=4095):
-        """
-        Generate a decompanding lookup table (LUT) based on the given knee points.
-
-        Parameters:
-        - companded_Pin: List of input knee points.
-        - companded_Pout: List of corresponding output knee points.
-        - max_input_value: Maximum input value for the LUT (default is 4095 for 12-bit input).
-
-        Returns:
-        - lut: A numpy array representing the decompanding lookup table.
-        """
-        # Ensure the input and output lists are of the same length
         if len(companded_pin) != len(companded_pout):
-            raise ValueError("companded_Pin and companded_Pout must have the same length.")
+            raise ValueError("companded_pin and companded_pout must have the same length.")
 
-        # Initialize the LUT with zeros
         lut = np.zeros(max_input_value + 1, dtype=np.float64)
+
+        # Handle the very first point
+        lut[0:companded_pin[0]] = companded_pout[0]
 
         # Generate the LUT by interpolating between the knee points
         for i in range(len(companded_pin) - 1):
@@ -43,18 +34,23 @@ class PiecewiseCurve:
             start_out = companded_pout[i]
             end_out = companded_pout[i + 1]
 
-            # Linear interpolation between the knee points
-            for x in range(start_in, end_in + 1):
-                t = (x - start_in) / (end_in - start_in)
-                lut[x] = start_out + t * (end_out - start_out)
+            # Use numpy for vectorized interpolation, which is much faster
+            x = np.arange(start_in, end_in + 1)
+            t = (x - start_in) / (end_in - start_in)
+            lut[x] = start_out + t * (end_out - start_out)
 
-        # Handle values beyond the last knee point (extend the last segment)
+        # Handle values beyond the last knee point
         last_in = companded_pin[-1]
         last_out = companded_pout[-1]
         lut[last_in:] = last_out
 
-
         return lut
+    
+    @staticmethod
+    def generate_decompanding_curve(self):
+        """
+        Generates a piecewise A-Law decompanding curve to reverse the companding process.
+        """
     
     # def generate_companding_curve(self):
     #     """
@@ -166,23 +162,60 @@ class PiecewiseCurve:
                 self.sensor_info["bayer_pattern"],
             )
 
-    def execute(self):
+    def plot_lut(self, lut, title="Decompanding LUT"):
         """
-        PWC decompanding
+        Plot the LUT curve
         """
-        print("Decompanding = " + str(self.enable))
+        plt.figure(figsize=(12, 8))
+        
+        # Plot the full LUT curve
+        x_values = np.arange(len(lut))
+        plt.plot(x_values, lut, 'b-', linewidth=2, label='LUT Curve')
+        
+        # Plot the knee points
+        plt.plot(self.companded_pin, self.companded_pout, 'ro', markersize=8, label='Knee Points')
+        
+        plt.xlabel('Input Value')
+        plt.ylabel('Output Value')
+        plt.title(title)
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Save the plot
+        filename = f"lut_plot_{self.platform['in_file']}.png"
+        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"LUT plot saved as: {filename}")
 
-        if self.enable:
-            start = time.time()
-            lut = PiecewiseCurve.generate_decompanding_lut(
-                self.parm_cmpd["companded_pin"],
-                self.parm_cmpd["companded_pout"],
-                max_input_value=self.parm_cmpd["companded_pin"][-1],
-            )
-            # subtract pedestal
-            
-            self.img = lut[self.img]
-            self.img = np.clip(self.img - self.parm_cmpd["pedestal"],0, None)
-            print(f"  Execution time: {time.time() - start:.3f}s")
+    def execute(self):
+        print("Decompanding = " + str(self.enable))
+        if not self.enable:
+            return self.img.astype(np.uint32)
+        
+        start = time.time()
+
+        # Calculate the maximum possible input value for the LUT, after pedestal subtraction.
+        # This is max_12bit_value - pedestal.
+        max_lut_input = (2**self.bit_depth - 1) - self.parm_cmpd["pedestal"]
+
+        # Generate the decompanding LUT using the pedestal-subtracted range.
+        lut = PiecewiseCurve.generate_decompanding_lut(
+            self.parm_cmpd["companded_pin"],
+            self.parm_cmpd["companded_pout"],
+            max_input_value=max_lut_input,
+        )
+
+        # Plot the LUT
+        if self.is_debug:
+            self.plot_lut(lut, f"Decompanding LUT - {self.platform['in_file']}")
+
+        # 1. Subtract pedestal from the original image data.
+        # The result must be clipped to ensure it's within the LUT's defined range.
+        img_pedestal_removed = np.clip(self.img.astype(np.int64) - self.parm_cmpd["pedestal"], 0, max_lut_input)
+
+        # 2. Apply the LUT to the pedestal-removed image.
+        self.img = lut[img_pedestal_removed.astype(np.uint32)]
+
+        print(f"  Execution time: {time.time() - start:.3f}s")
         self.save()
         return self.img.astype(np.uint32)

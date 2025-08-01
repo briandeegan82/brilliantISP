@@ -5,6 +5,9 @@ Code / Paper  Reference:
 https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pdf
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
+Note: The scaling algorithms (Bilinear and Nearest Neighbor) have been migrated to use OpenCV's 
+resize function for significantly improved performance. The original nested loop implementations 
+have been replaced with cv2.resize() calls while maintaining the same interface.
 """
 import time
 import re

@@ -19,14 +19,14 @@ class AutoWhiteBalance:
     Auto White Balance Module
     """
 
-    def __init__(self, raw, sensor_info, parm_awb):
+    def __init__(self, raw, sensor_info, parm_awb, parm_wbc):
 
         self.raw = raw
 
         self.sensor_info = sensor_info
         self.parm_awb = parm_awb
         self.enable = parm_awb["is_enable"]
-        self.bit_depth = sensor_info["bit_depth"]
+        self.hdr_bit_depth = sensor_info["hdr_bit_depth"]
         self.is_debug = parm_awb["is_debug"]
         self.underexposed_percentage = parm_awb["underexposed_percentage"]
         self.overexposed_percentage = parm_awb["overexposed_percentage"]
@@ -34,13 +34,14 @@ class AutoWhiteBalance:
         self.bayer = self.sensor_info["bayer_pattern"]
         # self.img = img
         self.algorithm = parm_awb["algorithm"]
+        self.parm_wbc = parm_wbc
 
     def determine_white_balance_gain(self):
         """
         Determine white balance gains calculated using AWB Algorithms to Raw Image
         """
 
-        max_pixel_value = 2**self.bit_depth
+        max_pixel_value = 2**self.hdr_bit_depth
         approx_percentage = max_pixel_value / 100
         # Removed overexposed and underexposed pixels for wb gain calculation
         overexposed_limit = (
@@ -160,4 +161,7 @@ class AutoWhiteBalance:
             rgain, bgain = self.determine_white_balance_gain()
             print(f"  Execution time: {time.time() - start:.3f}s")
             return np.array([rgain, bgain])
+        else:
+            rgain, bgain = self.parm_wbc["r_gain"], self.parm_wbc["b_gain"]
+            print(f"  Using default gains: {rgain}, {bgain}")
         return None
