@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-def durand_tone_mapping(hdr_image, sigma_space=10, sigma_color=0.4, contrast_factor=5):
+def durand_tone_mapping(hdr_image, sigma_space=10, sigma_color=0.4, contrast_factor=5, use_gpu=False):
     """
     Apply Durand's tone mapping algorithm to an HDR image.
 
@@ -10,15 +10,29 @@ def durand_tone_mapping(hdr_image, sigma_space=10, sigma_color=0.4, contrast_fac
         sigma_space (float): Spatial standard deviation for bilateral filtering.
         sigma_color (float): Color standard deviation for bilateral filtering.
         contrast_factor (float): Scaling factor for compressing the base layer.
+        use_gpu (bool): Whether to use GPU acceleration via UMat.
 
     Returns:
         numpy.ndarray: Tone-mapped LDR image (normalized to [0, 1]).
     """
+    # Check if GPU acceleration is available
+    gpu_available = use_gpu and cv2.cuda.getCudaEnabledDeviceCount() > 0
+    
     # Step 1: Convert to logarithmic domain
     log_hdr = np.log1p(hdr_image)
 
     # Step 2: Apply bilateral filtering to separate base and detail layers
-    base_layer = cv2.bilateralFilter(log_hdr, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_space)
+    if gpu_available:
+        try:
+            # GPU-accelerated bilateral filtering using UMat
+            gpu_log_hdr = cv2.UMat(log_hdr.astype(np.float32))
+            gpu_base_layer = cv2.bilateralFilter(gpu_log_hdr, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_space)
+            base_layer = gpu_base_layer.get()
+        except Exception as e:
+            print(f"GPU bilateral filtering failed, falling back to CPU: {e}")
+            base_layer = cv2.bilateralFilter(log_hdr, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_space)
+    else:
+        base_layer = cv2.bilateralFilter(log_hdr, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_space)
 
     # Step 3: Compress the base layer
     compressed_base = base_layer / contrast_factor

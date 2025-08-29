@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: gamma_correction.py
 Description: Implements the gamma look up table provided in the config file
@@ -24,6 +25,8 @@ class GammaCorrection:
         self.parm_gmm = parm_gmm
         self.is_save = parm_gmm["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("GammaCorrection", config=self.platform)
 
     def generate_gamma_lut(self, bit_depth):
         """
@@ -63,11 +66,11 @@ class GammaCorrection:
         """
         Exceute Gamma Correction
         """
-        print("Gamma Correction = " + str(self.enable))
+        self.logger.info(f"Gamma Correction = {self.enable}")
         if self.enable is True:
             start = time.time()
             gc_out = self.apply_gamma()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = gc_out
 
         self.save()

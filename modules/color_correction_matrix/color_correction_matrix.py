@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: color_correction_matrix.py
 Description: Applies the 3x3 correction matrix on the image
@@ -23,6 +24,8 @@ class ColorCorrectionMatrix:
         self.ccm_mat = None
         self.is_save = parm_ccm["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("ColorCorrectionMatrix", config=self.platform)
 
     def apply_ccm(self):
         """
@@ -68,12 +71,12 @@ class ColorCorrectionMatrix:
 
     def execute(self):
         """Execute ccm if enabled."""
-        print("Color Correction Matrix = " + str(self.enable))
+        self.logger.info(f"Color Correction Matrix = {self.enable}")
 
         if self.enable:
             start = time.time()
             ccm_out = self.apply_ccm()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = ccm_out
 
         self.save()

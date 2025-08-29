@@ -246,7 +246,7 @@ def save_pipeline_output(img_name, output_img, config_file, output_dir=None):
 
     # Storing configuration file for output image
     with open(
-        save_dir + img_name + dt_string + ".yaml", "w", encoding="utf-8"
+        os.path.join(save_dir, img_name + dt_string + ".yaml"), "w", encoding="utf-8"
     ) as file:
         yaml.dump(
             config_file,
@@ -257,7 +257,7 @@ def save_pipeline_output(img_name, output_img, config_file, output_dir=None):
         )
 
     # Save Image as .png
-    plt.imsave(save_dir + img_name + dt_string + ".png", output_img)
+    plt.imsave(os.path.join(save_dir, img_name + dt_string + ".png"), output_img)
 
 
 # utilities to save the config_automate exactly as config.yml

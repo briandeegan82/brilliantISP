@@ -1,0 +1,206 @@
+platform:
+  filename: "image_0.raw"
+  disable_progress_bar: false
+  leave_pbar_string: false
+  render_3a: false
+  # npy, png or both
+  save_format: png
+
+sensor_info:
+  bayer_pattern: "rggb"
+  #range: 65536
+  hdr_bit_depth: 24
+  bit_depth: 24
+  width: 2880
+  height: 1860
+  output_bit_depth: 8
+  sensor: "triton_490"
+  endian_type: "ieee-be"
+  data_format: "uint32"
+  embedded_rows_top: 0
+  embedded_rows_bottom: 0
+
+
+# verified to match the SVS camera's companding curve
+companding:
+  is_enable: false
+  is_debug: false
+  pedestal: 0
+  companded: false
+  companded_pin: [1, 256, 512, 831, 994, 1319, 1984, 2530, 2871, 2968, 3258, 3541, 3855]
+  companded_pout: [1, 256, 1024, 3900, 7800, 23400, 87315, 174630, 349260, 548241, 1736000, 5208000, 16777200] #, 16777200]
+  #input_range: 65535
+  #output_range: 1048575
+  #num_kneepoints: 10
+  #A: 87.6 # don't touch!
+  is_save: false
+
+crop:
+  is_enable: false
+  is_debug: false
+  crop_x_start: 1
+  crop_y_start: 1
+  new_width: 1920
+  new_height: 1536
+  is_save: false  
+
+dead_pixel_correction: 
+  is_enable: false
+  dp_threshold: 64
+  is_debug: false
+  is_save: false
+
+black_level_correction:
+  is_enable: false
+  r_offset: 16
+  gr_offset: 16
+  gb_offset: 16
+  b_offset: 16
+  is_linear: true
+  r_sat: 4095
+  gr_sat: 4095
+  gb_sat: 4095
+  b_sat: 4095
+  is_save: false
+
+oecf:
+  is_enable: false
+  # Make sure the LUT has the right bit range i.e. if image is of 10 bit LUT should be from [0 - (2^10)-1]
+  # LUT here does nothing to the sensor response i.e. a value of 800 maps to 800 and 2000 maps to 2000  
+  
+  is_save: false
+
+digital_gain:
+  is_debug: true
+  is_auto: false
+  is_enable: true
+  # Array of pre-define Gains
+  gain_array: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
+  # Index of default gain
+  current_gain: 12
+  ae_feedback: 0
+  is_save: false
+
+lens_shading_correction: 
+  is_enable: false
+  is_save: false
+
+bayer_noise_reduction:
+  is_enable: true
+  filter_window: 5
+  r_std_dev_s: 0.8
+  r_std_dev_r: 0.15
+  g_std_dev_s: 0.8
+  g_std_dev_r: 0.15
+  b_std_dev_s: 0.8
+  b_std_dev_r: 0.1
+  is_save: false
+
+auto_white_balance:
+  is_enable: false
+  is_debug: false
+  underexposed_percentage: 0.05
+  overexposed_percentage: 0.05
+  algorithm: "pca"
+  # grey_world, norm_2, pca
+  percentage: 3.5 # pca
+
+white_balance:
+  is_enable: false
+  # is_auto refers to auto white balance module
+  is_debug: false
+  is_auto: true
+  r_gain: 1.0 #1.24609375
+  b_gain: 1.0 #2.80859375
+  is_save: false
+
+demosaic:
+  is_save: false
+  # Algorithm selection: "malvar", "bilinear", "bilinear_opt", "bilinear_fast"
+  # - "malvar": Malvar-He-Cutler (default, high quality, slower)
+  # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
+  # - "bilinear_opt": Optimized bilinear using NumPy operations (medium speed, good quality)
+  # - "bilinear_fast": Fastest bilinear using simple averaging (fastest, good quality)
+  algorithm: "bilinear_fast"
+
+color_correction_matrix:
+  #Row sum to 1 convention
+  is_enable: true
+  corrected_red: [1.5361, -0.34375, -0.19214] #[1.660, -0.527, -0.133]
+  corrected_green: [-0.26489, 1.5491, -0.28418] #[-0.408, 1.563, -0.082]
+  corrected_blue: [0.060547, -0.47437, 1.4138] #[-0.055, -1.641, 2.695]
+  is_save: false
+
+gamma_correction:
+  is_enable: true
+  is_save: false
+
+auto_exposure:
+  is_enable: true
+  is_debug: false
+  center_illuminance: 4095
+  histogram_skewness: 0.9
+
+# Example usage in ISP pipeline
+hdr_durand:
+  is_enable: true
+  is_save: True
+  is_debug: false
+  sigma_space: 8.0
+  sigma_color: 8.0
+  contrast_factor: 1.5
+  downsample_factor: 4
+
+
+color_space_conversion: 
+  conv_standard: 2
+  # Bt.709 HD =   1
+  # Bt.601/4407 = 2
+  is_save: false
+
+color_saturation_enhancement:
+  is_enable: false
+  saturation_gain: 1.8
+
+ldci:
+  is_enable: true
+  clip_limit: 2.0
+  wind: 128
+  is_save: false
+
+sharpen:
+  is_enable: false
+  sharpen_sigma: 5
+  sharpen_strength: 1
+  is_save: false
+
+2d_noise_reduction:
+  is_enable: false
+  # nlm
+  window_size: 9
+  patch_size: 5
+  wts: 10
+  is_save: false
+  
+rgb_conversion:
+  is_enable: true
+  is_save: false
+
+scale:
+  is_enable: false
+  is_debug: false
+  new_width: 1280
+  new_height: 1024   
+  is_hardware: false
+  # Nearest_Neighbor # Bilinear
+  algorithm: "Bilinear"
+  upscale_method: "Bilinear"
+  downscale_method: "Bilinear"  
+  is_save: false
+
+yuv_conversion_format:
+  # The conversion wont run if csc is false
+  is_enable: true
+  conv_type: '444'
+  is_save: false
+

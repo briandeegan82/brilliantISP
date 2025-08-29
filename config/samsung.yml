@@ -114,6 +114,12 @@ white_balance:
 
 demosaic:
   is_save: false
+  # Algorithm selection: "malvar", "bilinear", "bilinear_opt", "bilinear_fast"
+  # - "malvar": Malvar-He-Cutler (default, high quality, slower)
+  # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
+  # - "bilinear_opt": Optimized bilinear using NumPy operations (medium speed, good quality)
+  # - "bilinear_fast": Fastest bilinear using simple averaging (fastest, good quality)
+  algorithm: "bilinear_fast"
 
 color_correction_matrix:
   #Row sum to 1 convention

@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: digital_gain.py
 Description: Applies the digital gain based on config file also interacts with AE
@@ -28,6 +29,8 @@ class DigitalGain:
         self.sensor_info = sensor_info
         self.platform = platform
         self.param_dga = parm_dga
+        # Initialize debug logger
+        self.logger = get_debug_logger("DigitalGain", config=self.platform)
 
     def apply_digital_gain(self):
         """
@@ -62,7 +65,7 @@ class DigitalGain:
         self.img = self.gains_array[self.current_gain] * self.img
 
         if self.is_debug:
-            print("   - DG  - Applied Gain = ", self.gains_array[self.current_gain])
+            self.logger.info(f"   - DG  - Applied Gain = {self.gains_array[self.current_gain]}")
 
         # np.uint32 bit to contain the bpp bit raw
         self.img = np.uint32(np.clip(self.img, 0, ((2**bpp) - 1)))
@@ -86,12 +89,12 @@ class DigitalGain:
         """
         Execute Digital Gain Module
         """
-        print("Digital Gain (default) = True ")
+        self.logger.info("Digital Gain (default) = True ")
 
         # ae_correction indicated if the gain is default digital gain or AE-correction gain.
         start = time.time()
         dg_out = self.apply_digital_gain()
-        print(f"  Execution time: {time.time() - start:.3f}s")
+        self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
         self.img = dg_out
         self.save()
         return self.img, self.current_gain

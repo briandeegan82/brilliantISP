@@ -9,6 +9,7 @@ import time
 import numpy as np
 
 from util.utils import save_output_array
+from util.debug_utils import get_debug_logger
 
 
 class BlackLevelCorrection:
@@ -24,6 +25,8 @@ class BlackLevelCorrection:
         self.is_linearize = self.param_blc["is_linear"]
         self.is_save = parm_blc["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("BlackLevelCorrection", config=self.platform)
 
     def apply_blc_parameters(self):
         """
@@ -150,12 +153,13 @@ class BlackLevelCorrection:
         """
         Black Level Correction
         """
-        print("Black Level Correction = " + str(self.enable))
+        self.logger.info(f"Black Level Correction = {self.enable}")
 
         if self.enable:
             start = time.time()
             blc_out = self.apply_blc_parameters()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            execution_time = time.time() - start
+            self.logger.info(f"Execution time: {execution_time:.3f}s")
             self.img = blc_out
         self.save()
         return self.img

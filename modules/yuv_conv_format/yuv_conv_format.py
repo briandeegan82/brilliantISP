@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: yuv_conv_format.py
 Description:
@@ -31,6 +32,8 @@ class YUVConvFormat:
         self.is_save = parm_yuv["is_save"]
         self.platform = platform
         self.in_file = self.platform["in_file"]
+        # Initialize debug logger
+        self.logger = get_debug_logger("YUVConvFormat", config=self.platform)
 
     def convert2yuv_format(self):
         """Execute YUV conversion."""
@@ -92,12 +95,12 @@ class YUVConvFormat:
 
         if self.enable:
             if self.platform["rgb_output"]:
-                print("Invalid input for YUV conversion: RGB image format.")
+                self.logger.info("Invalid input for YUV conversion: RGB image format.")
                 self.param_yuv["is_enable"] = False
             else:
                 start = time.time()
                 yuv = self.convert2yuv_format()
-                print(f"  Execution time: {time.time() - start:.3f}s")
+                self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
                 self.img = yuv
 
         self.save()

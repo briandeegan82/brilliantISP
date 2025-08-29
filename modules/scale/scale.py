@@ -1,6 +1,7 @@
+from util.debug_utils import get_debug_logger
 """
 File: scale.py
-Description: Implements both hardware friendly and non hardware freindly scaling
+Description: Implements both hardware friendly and non hardware freindly scaling with GPU acceleration
 Code / Paper  Reference:
 https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pdf
 Author: 10xEngineers Pvt Ltd
@@ -8,6 +9,7 @@ Author: 10xEngineers Pvt Ltd
 Note: The scaling algorithms (Bilinear and Nearest Neighbor) have been migrated to use OpenCV's 
 resize function for significantly improved performance. The original nested loop implementations 
 have been replaced with cv2.resize() calls while maintaining the same interface.
+GPU acceleration is now available for systems with CUDA support.
 """
 import time
 import re
@@ -18,9 +20,16 @@ from util.utils import save_output_array_yuv, save_output_array
 from modules.scale.nearest_neighbor import NearestNeighbor as NN
 from modules.scale.bilinear_interpolation import BilinearInterpolation as BLI
 
+# Try to import GPU-accelerated version
+try:
+    from modules.scale.scale_gpu import ScaleGPU
+    GPU_VERSION_AVAILABLE = True
+except ImportError:
+    GPU_VERSION_AVAILABLE = False
+
 
 class Scale:
-    """Scale color image to given size."""
+    """Scale color image to given size with GPU acceleration."""
 
     def __init__(self, img, platform, sensor_info, parm_sca, conv_std):
         self.img = img
@@ -31,14 +40,26 @@ class Scale:
         self.platform = platform
         self.conv_std = conv_std
         self.get_scaling_params()
+        # Initialize debug logger
+        self.logger = get_debug_logger("Scale", config=self.platform)
+        
+        # Check if GPU acceleration should be used
+        self.use_gpu = False
+        if GPU_VERSION_AVAILABLE:
+            try:
+                from util.gpu_utils import is_gpu_available, should_use_gpu
+                self.use_gpu = (is_gpu_available() and 
+                               should_use_gpu((sensor_info["height"], sensor_info["width"]), 'resize'))
+            except ImportError:
+                self.use_gpu = False
 
     def apply_scaling(self):
-        """Execute scaling."""
+        """Execute scaling with GPU acceleration if available."""
 
         # check if no change in size
         if self.old_size == self.new_size:
             if self.is_debug:
-                print("   - Output size is the same as input size.")
+                self.logger.info("   - Output size is the same as input size.")
             return self.img
 
         if self.img.dtype == "float32":
@@ -50,6 +71,17 @@ class Scale:
                 (self.new_size[0], self.new_size[1], 3), dtype="uint8"
             )
 
+        # Use GPU-accelerated scaling if available and beneficial
+        if self.use_gpu and GPU_VERSION_AVAILABLE:
+            try:
+                scale_gpu = ScaleGPU(self.img, self.platform, self.sensor_info, self.parm_sca, self.conv_std)
+                return scale_gpu.apply_scaling()
+            except Exception as e:
+                self.logger.info(f"  GPU scaling failed, falling back to CPU: {e}")
+                # Fall back to CPU implementation
+                pass
+
+        # CPU implementation (original)
         # Loop over each channel to resize the image
         for i in range(3):
 
@@ -105,14 +137,19 @@ class Scale:
                 )
 
     def execute(self):
-        """Execute scaling if enabled."""
-        print("Scale = " + str(self.enable))
+        """
+        Applying scaling to input image
+        """
+        self.logger.info(f"Scale = {self.enable}")
 
-        if self.enable:
+        if self.enable is True:
             start = time.time()
-            scaled_img = self.apply_scaling()
-            print(f"  Execution time: {time.time() - start:.3f}s")
-            return scaled_img
+            s_out = self.apply_scaling()
+            execution_time = time.time() - start
+            self.logger.info(f"  Execution time: {execution_time:.3f}s")
+            self.img = s_out
+
+        self.save()
         return self.img
 
 
@@ -230,7 +267,7 @@ class Scale2D:
 
         # check if output size is valid
         if scale_info == [[1, 0, None], [1, 0, None]]:
-            print("   - Invalid output size.")
+            self.logger.info("   - Invalid output size.")
             return self.single_channel
         else:
             # step 1: Downscale by int factor using bilinear interpolation
@@ -311,14 +348,14 @@ class Scale2D:
         """Execute hardware independent scaling."""
         if self.algo == "Nearest_Neighbor":
             if self.is_debug:
-                print("   - Scaling with Nearest Neighbor method...")
+                self.logger.info("   - Scaling with Nearest Neighbor method...")
 
             nn_obj = NN(self.single_channel, self.new_size)
             return nn_obj.scale_nearest_neighbor()
 
         elif self.algo == "Bilinear":
             if self.is_debug:
-                print("   - Scaling with Bilinear method...")
+                self.logger.info("   - Scaling with Bilinear method...")
 
             bilinear_obj = BLI(self.single_channel, self.new_size)
             return bilinear_obj.bilinear_interpolation()

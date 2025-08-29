@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: auto_white_balance.py
 Description: 3A - AWB Runs the AWB algorithm based on selection from config file
@@ -35,6 +36,14 @@ class AutoWhiteBalance:
         # self.img = img
         self.algorithm = parm_awb["algorithm"]
         self.parm_wbc = parm_wbc
+        
+        # Initialize debug logger with config from parm_awb
+        debug_config = {
+            'debug_enabled': parm_awb.get('is_debug', False),
+            'debug_log_level': 'INFO',
+            'debug_log_file': None
+        }
+        self.logger = get_debug_logger("AutoWhiteBalance", config=debug_config)
 
     def determine_white_balance_gain(self):
         """
@@ -50,8 +59,8 @@ class AutoWhiteBalance:
         underexposed_limit = (self.underexposed_percentage) * approx_percentage
 
         if self.is_debug:
-            print("   - AWB - Underexposed Pixel Limit = ", underexposed_limit)
-            print("   - AWB - Overexposed Pixel Limit  = ", overexposed_limit)
+            self.logger.info(f"   - AWB - Underexposed Pixel Limit = {underexposed_limit}")
+            self.logger.info(f"   - AWB - Overexposed Pixel Limit  = {overexposed_limit}")
 
         if self.bayer == "rggb":
 
@@ -106,9 +115,9 @@ class AutoWhiteBalance:
         bgain = 1 if bgain <= 1 else bgain
 
         if self.is_debug:
-            print("   - AWB Actual Gains: ")
-            print("   - AWB - RGain = ", rgain)
-            print("   - AWB - Bgain = ", bgain)
+            self.logger.info("   - AWB Actual Gains: ")
+            self.logger.info(f"   - AWB - RGain = {rgain}")
+            self.logger.info(f"   - AWB - Bgain = {bgain}")
 
         return rgain, bgain
 
@@ -152,16 +161,16 @@ class AutoWhiteBalance:
         """
         Execute Auto White Balance Module
         """
-        print("Auto White balancing = " + str(self.enable))
+        self.logger.info(f"Auto White balancing = {self.enable}")
 
         # This module is enabled only when white balance 'enable' and 'auto' parameter both
         # are true.
         if self.enable is True:
             start = time.time()
             rgain, bgain = self.determine_white_balance_gain()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             return np.array([rgain, bgain])
         else:
             rgain, bgain = self.parm_wbc["r_gain"], self.parm_wbc["b_gain"]
-            print(f"  Using default gains: {rgain}, {bgain}")
+            self.logger.info(f"  Using default gains: {rgain}, {bgain}")
         return None

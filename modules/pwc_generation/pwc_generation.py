@@ -4,6 +4,7 @@ import time
 from util.utils import save_output_array
 
 
+from util.debug_utils import get_debug_logger
 class PiecewiseCurve:
     
     def __init__(self, img, platform, sensor_info, parm_cmpd):
@@ -17,6 +18,8 @@ class PiecewiseCurve:
         self.companded_pout = parm_cmpd["companded_pout"]
         self.is_save = parm_cmpd["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("PWC", config=self.platform)
     
     def generate_decompanding_lut(companded_pin, companded_pout, max_input_value=4095):
         if len(companded_pin) != len(companded_pout):
@@ -185,10 +188,10 @@ class PiecewiseCurve:
         filename = f"lut_plot_{self.platform['in_file']}.png"
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         plt.close()
-        print(f"LUT plot saved as: {filename}")
+        self.logger.info(f"LUT plot saved as: {filename}")
 
     def execute(self):
-        print("Decompanding = " + str(self.enable))
+        self.logger.info(f"Decompanding = {self.enable}")
         if not self.enable:
             return self.img.astype(np.uint32)
         
@@ -216,6 +219,6 @@ class PiecewiseCurve:
         # 2. Apply the LUT to the pedestal-removed image.
         self.img = lut[img_pedestal_removed.astype(np.uint32)]
 
-        print(f"  Execution time: {time.time() - start:.3f}s")
+        self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
         self.save()
         return self.img.astype(np.uint32)

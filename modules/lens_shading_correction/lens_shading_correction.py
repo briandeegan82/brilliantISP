@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: lens_shading_correction.py
 Description:
@@ -18,12 +19,14 @@ class LensShadingCorrection:
         self.sensor_info = sensor_info
         self.parm_lsc = parm_lsc
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("LensShadingCorrection", config=self.platform)
 
     def execute(self):
         """
         Execute Lens Shading Correction
         """
-        print("Lens Shading Correction = " + str(self.enable))
+        self.logger.info(f"Lens Shading Correction = {self.enable}")
 
         if self.enable:
             return self.img

@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: white_balance.py
 Description: Applies the white balance gains from the config file
@@ -32,6 +33,8 @@ class WhiteBalance:
         self.bpp = self.sensor_info["hdr_bit_depth"]
         self.raw = None
         self.awb_gains = awb_gains
+        # Initialize debug logger
+        self.logger = get_debug_logger("WhiteBalance", config=self.platform)
 
     def apply_wb_parameters(self):
         """
@@ -61,9 +64,9 @@ class WhiteBalance:
             self.raw[::2, 1::2] = self.raw[::2, 1::2] * bluegain
 
         if np.max(self.raw) >= 2**self.bpp:
-            print(f"  Warning: Raw image values exceed {self.bpp} bits.")
-            print(f"  Max value: {np.max(self.raw)}")
-            print(f"  Clipping values to {self.bpp} bits.")
+            self.logger.info(f"  Warning: Raw image values exceed {self.bpp} bits.")
+            self.logger.info(f"  Max value: {np.max(self.raw)}")
+            self.logger.info(f"  Clipping values to {self.bpp} bits.")
             self.raw = np.clip(self.raw, 0, (2**self.bpp) - 1)
         
         raw_whitebal = np.uint32(self.raw)
@@ -93,7 +96,7 @@ class WhiteBalance:
             print("White balancing = " + "True")
             start = time.time()
             wb_out = self.apply_wb_parameters()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = wb_out
 
         self.save()

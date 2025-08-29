@@ -3,9 +3,17 @@ from scipy.ndimage import gaussian_filter, zoom
 from util.utils import save_output_array
 import time
 
+from util.debug_utils import get_debug_logger
+# Try to import GPU-accelerated version
+try:
+    from modules.hdr_durand.hdr_durand_fast_gpu import HDRDurandToneMappingGPU
+    GPU_VERSION_AVAILABLE = True
+except ImportError:
+    GPU_VERSION_AVAILABLE = False
+
 class HDRDurandToneMapping:
     """
-    HDR Durand Tone Mapping Algorithm Implementation
+    HDR Durand Tone Mapping Algorithm Implementation with GPU acceleration
     """
     
     def __init__(self, img, platform, sensor_info, params):
@@ -20,6 +28,18 @@ class HDRDurandToneMapping:
         self.output_bit_depth = sensor_info.get("output_bit_depth", 8)
         self.sensor_info = sensor_info
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("HDRDurandToneMapping", config=self.platform)
+        
+        # Check if GPU acceleration should be used
+        self.use_gpu = False
+        if GPU_VERSION_AVAILABLE:
+            try:
+                from util.gpu_utils import is_gpu_available, should_use_gpu
+                self.use_gpu = (is_gpu_available() and 
+                               should_use_gpu((sensor_info.get("height", 1000), sensor_info.get("width", 1000)), 'bilateral_filter'))
+            except ImportError:
+                self.use_gpu = False
     
     def normalize(self, image):
         """ Normalize image to [0,1] range."""
@@ -44,7 +64,7 @@ class HDRDurandToneMapping:
     
     def apply_tone_mapping(self):
         """ Durand's tone mapping implementation. """
-            # Convert to log domain
+        # Convert to log domain
         epsilon = 1e-6  # Small value to avoid log(0)
         log_luminance = np.log10(self.img + epsilon)
     
@@ -86,10 +106,31 @@ class HDRDurandToneMapping:
     
     def execute(self):
         if self.is_enable is True:
-            print("Executing HDR Durand Tone Mapping...")
+            self.logger.info("Executing HDR Durand Tone Mapping...")
             start = time.time()
-            self.img = self.apply_tone_mapping()
-            print(f"Execution time: {time.time() - start:.3f}s")
+            
+            # Use GPU-accelerated version if available and beneficial
+            if self.use_gpu and GPU_VERSION_AVAILABLE:
+                try:
+                    gpu_hdr = HDRDurandToneMappingGPU(self.img, self.platform, self.sensor_info, {
+                        "is_enable": self.is_enable,
+                        "is_save": self.is_save,
+                        "is_debug": self.is_debug,
+                        "sigma_space": self.sigma_space,
+                        "sigma_color": self.sigma_color,
+                        "contrast_factor": self.contrast_factor,
+                        "downsample_factor": self.downsample_factor
+                    })
+                    self.img = gpu_hdr.execute()
+                except Exception as e:
+                    self.logger.info(f"  GPU HDR failed, falling back to CPU: {e}")
+                    self.img = self.apply_tone_mapping()
+            else:
+                # Use CPU version
+                self.img = self.apply_tone_mapping()
+            
+            execution_time = time.time() - start
+            self.logger.info(f"Execution time: {execution_time:.3f}s")
             
         self.save()
         return self.img

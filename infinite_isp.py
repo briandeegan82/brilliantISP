@@ -15,6 +15,105 @@ import tifffile as tiff
 import os
 
 import util.utils as util
+from util.debug_utils import get_debug_logger
+
+# HDR Image Reading Functions
+
+def read_hdr_3byte(file_path, width, height, byte_order='little'):
+    """
+    Read HDR image using 3 consecutive bytes per pixel with reversed uint32 byte order
+    """
+    with open(file_path, 'rb') as f:
+        data = f.read()
+    
+    expected_size = width * height * 3
+    actual_size = len(data)
+    
+    if actual_size < expected_size:
+        # Use debug_print for conditional output
+        from util.debug_utils import debug_print
+        debug_print(f"Warning: File size {actual_size} bytes is smaller than expected {expected_size} bytes")
+        return None
+    
+    pixels = []
+    for i in range(0, min(actual_size, expected_size), 3):
+        if i + 2 < len(data):
+            if byte_order == 'little':
+                # Convert bytes to hex first, then combine in hex space
+                hex_byte1 = hex(data[i])[2:].zfill(2)  # Remove '0x' and pad to 2 digits
+                hex_byte2 = hex(data[i+1])[2:].zfill(2)
+                hex_byte3 = hex(data[i+2])[2:].zfill(2)
+            
+                # Combine in hex space: little endian (least significant byte first)
+                hex_pixel = hex_byte1 + hex_byte2 + hex_byte3
+                pixel_value = int(hex_pixel, 16)  # Convert hex to decimal
+            else:
+                # Big endian (most significant byte first)
+                hex_byte1 = hex(data[i])[2:].zfill(2)
+                hex_byte2 = hex(data[i+1])[2:].zfill(2)
+                hex_byte3 = hex(data[i+2])[2:].zfill(2)
+            
+                # Combine in hex space: big endian
+                hex_pixel = hex_byte3 + hex_byte2 + hex_byte1
+                pixel_value = int(hex_pixel, 16)  # Convert hex to decimal
+        
+        pixels.append(pixel_value)
+    
+    image = np.array(pixels, dtype=np.uint32)
+    image = image.reshape((height, width))
+    
+    return image
+
+def read_hdr_uint16(file_path, width, height, byte_order='little'):
+    """
+    Read HDR image using uint16 pairs as uint32 pixels
+    """
+    with open(file_path, 'rb') as f:
+        data = f.read()
+    
+    expected_size = width * height * 4
+    actual_size = len(data)
+    
+    if actual_size < expected_size:
+        # Use debug_print for conditional output
+        from util.debug_utils import debug_print
+        debug_print(f"Warning: File size {actual_size} bytes is smaller than expected {expected_size} bytes")
+        return None
+    
+    if byte_order == 'little':
+        dtype = '<u2'
+    else:
+        dtype = '>u2'
+    
+    uint16_data = np.frombuffer(data[:min(actual_size, expected_size)], dtype=dtype)
+    
+    pixels = []
+    for i in range(0, len(uint16_data), 2):
+        if i + 1 < len(uint16_data):
+            pixel_value = uint16_data[i] | (uint16_data[i+1] << 16)
+            pixels.append(pixel_value)
+    
+    image = np.array(pixels, dtype=np.uint32)
+    image = image.reshape((height, width))
+    
+    return image
+
+def analyze_file_size(file_path):
+    """Analyze file size to suggest possible dimensions"""
+    file_size = Path(file_path).stat().st_size
+    # Use debug_print for conditional output
+    from util.debug_utils import debug_print
+    debug_print(f"File size: {file_size:,} bytes")
+    
+    # For 3-byte method
+    pixels_3byte = file_size // 3
+    debug_print(f"Pixels (3-byte method): {pixels_3byte:,}")
+    
+    # For uint16 method
+    pixels_uint16 = file_size // 4
+    debug_print(f"Pixels (uint16 method): {pixels_uint16:,}")
+    
+    return pixels_3byte, pixels_uint16
 
 from modules.crop.crop import Crop
 from modules.dead_pixel_correction.dead_pixel_correction import (
@@ -34,10 +133,14 @@ from modules.bayer_noise_reduction.bayer_noise_reduction import (
 )
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
 from modules.white_balance.white_balance import WhiteBalance as WB
+from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
 from modules.hdr_durand.hdr_durand_fast import HDRDurandToneMapping as HDR
 from modules.demosaic.demosaic import Demosaic
 from modules.color_correction_matrix.color_correction_matrix import (
     ColorCorrectionMatrix as CCM,
+)
+from modules.color_correction_matrix.color_correction_matrix_optimized import (
+    ColorCorrectionMatrixOptimized as CCMOPT,
 )
 from modules.gamma_correction.gamma_correction import GammaCorrection as GC
 from modules.auto_exposure.auto_exposure import AutoExposure as AE
@@ -67,6 +170,11 @@ class InfiniteISP:
         # Ensure output directory exists
         os.makedirs(self.output_path, exist_ok=True)
         self.load_config(config_path)
+        # Set global debug state from config
+        from util.debug_utils import set_global_debug_enabled
+        set_global_debug_enabled(self.platform.get('debug_enabled', False))
+        # Initialize debug logger after config is loaded
+        self.logger = get_debug_logger("InfiniteISP", config=self.platform)
 
     def load_config(self, config_path):
         """
@@ -114,9 +222,13 @@ class InfiniteISP:
 
         # add rgb_output_conversion module
 
-    def load_raw(self):
+    def load_raw(self, byte_order='little'):
         """
-        Load raw image from provided path
+        Load raw image from provided path with enhanced HDR support
+        
+        Args:
+            byte_order (str): 'little' or 'big' endian for HDR loading
+            reverse_uint32 (bool): If True, reverse byte order within uint32 pixel values
         """
         # Load raw image file information
         path_object = Path(self.data_path, self.raw_file)
@@ -131,13 +243,41 @@ class InfiniteISP:
         height = self.sensor_info["height"]
         bit_depth = self.sensor_info["bit_depth"]
 
-        # Load Raw
+        # Load Raw with enhanced HDR support
         if path_object.suffix == ".raw":
+            # Check if this might be an HDR file by analyzing file size
+            file_size = path_object.stat().st_size
+            expected_size_3byte = width * height * 3
+            expected_size_uint16 = width * height * 4
+            
+            self.logger.info(f"Loading raw file: {raw_path}")
+            self.logger.info(f"Expected dimensions: {width}x{height}")
+            self.logger.info(f"File size: {file_size:,} bytes")
+            self.logger.info(f"Expected size (3-byte method): {expected_size_3byte:,} bytes")
+            self.logger.info(f"Expected size (uint16 method): {expected_size_uint16:,} bytes")
+            
+            # Try different loading methods based on file size and bit depth
             if bit_depth > 8:
-                self.raw = np.fromfile(raw_path, dtype='>u2').reshape(
-                    (height, width)
-                )
+                # For high bit depth, try HDR methods first
+                if abs(file_size - expected_size_3byte) < expected_size_3byte * 0.1:  # Within 10%
+                        self.logger.info(f"Trying 3-byte HDR method ({byte_order} endian)...")
+                        self.raw = read_hdr_3byte(raw_path, width, height, byte_order)
+                        if self.raw is not None:
+                            self.logger.info(f"Successfully loaded using 3-byte HDR method ({byte_order} endian)")
+                            return
+                
+                if abs(file_size - expected_size_uint16) < expected_size_uint16 * 0.1:  # Within 10%
+                    self.logger.info(f"Trying uint16 HDR method ({byte_order} endian)...")
+                    self.raw = read_hdr_uint16(raw_path, width, height, byte_order)
+                    if self.raw is not None:
+                        self.logger.info(f"Successfully loaded using uint16 HDR method ({byte_order} endian)")
+                        return
+                
+                # Fall back to original method
+                self.logger.info("Falling back to original uint16 method...")
+                self.raw = np.fromfile(raw_path, dtype='>u2').reshape((height, width))
             else:
+                # For 8-bit or lower, use original method
                 self.raw = (
                     np.fromfile(raw_path, dtype=np.uint8)
                     .reshape((height, width))
@@ -146,7 +286,7 @@ class InfiniteISP:
         elif path_object.suffix == ".tiff":
             # Load tiff file
             img = tiff.imread(raw_path)
-            print("Image shape: ", img.shape)
+            self.logger.info(f"Image shape: {img.shape}")
             if img.ndim == 3:
                 self.raw = img[:, :, 0]
             else:
@@ -214,7 +354,8 @@ class InfiniteISP:
 
         # =====================================================================
         # White balancing
-        wbc = WB(bnr_raw, self.platform, self.sensor_info, self.parm_wbc, self.awb_gains)
+        # Use optimized version for better performance
+        wbc = WBOPT(bnr_raw, self.platform, self.sensor_info, self.parm_wbc, self.awb_gains)
         wb_raw = wbc.execute()
 
 
@@ -223,7 +364,7 @@ class InfiniteISP:
         # HDR tone mapping
         hdr = HDR(wb_raw, self.platform, self.sensor_info, self.param_durand)
         hdr_raw = hdr.execute()
-        print("HDR Image mean: ", np.mean(hdr_raw))
+        self.logger.info(f"HDR Image mean: {np.mean(hdr_raw)}")
 
 
 
@@ -231,33 +372,34 @@ class InfiniteISP:
         # CFA demosaicing
         cfa_inter = Demosaic(hdr_raw, self.platform, self.sensor_info, self.parm_dem)
         demos_img = cfa_inter.execute()
-        print("Demosaiced Image mean: ", np.mean(demos_img))
+        self.logger.info(f"Demosaiced Image mean: {np.mean(demos_img)}")
 
 
 
         # =====================================================================
         # Color correction matrix
-        ccm = CCM(demos_img, self.platform, self.sensor_info, self.parm_ccm)
+        # Use optimized version for better performance
+        ccm = CCMOPT(demos_img, self.platform, self.sensor_info, self.parm_ccm)
         ccm_img = ccm.execute()
-        print("CCM Image mean: ", np.mean(ccm_img))
+        self.logger.info(f"CCM Image mean: {np.mean(ccm_img)}")
 
         # =====================================================================
         # Gamma
         gmc = GC(ccm_img, self.platform, self.sensor_info, self.parm_gmc)
         gamma_raw = gmc.execute()
-        print("Gamma Image mean: ", np.mean(gamma_raw))
+        self.logger.info(f"Gamma Image mean: {np.mean(gamma_raw)}")
 
         # =====================================================================
         # Auto-Exposure
         aef = AE(gamma_raw, self.sensor_info, self.parm_ae)
         self.ae_feedback = aef.execute()
-        print("AE Feedback: ", self.ae_feedback)
+        self.logger.info(f"AE Feedback: {self.ae_feedback}")
 
         # =====================================================================
         # Color space conversion
         csc = CSC(gamma_raw, self.platform, self.sensor_info, self.parm_csc, self.parm_cse )
         csc_img = csc.execute()
-        print("CSC Image mean: ", np.mean(csc_img))
+        self.logger.info(f"CSC Image mean: {np.mean(csc_img)}")
 
         # =====================================================================
         # Local Dynamic Contrast Improvement
@@ -356,19 +498,25 @@ class InfiniteISP:
 
             util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.output_path)
 
-    def execute(self, img_path=None):
+    def execute(self, img_path=None, load_method='auto', byte_order='little'):
         """
         Start execution of Infinite-ISP
+        
+        Args:
+            img_path (str): Optional path to image file
+            load_method (str): 'auto', '3byte', 'uint16', or 'original'
+            byte_order (str): 'little' or 'big'
+            reverse_uint32 (bool): If True, reverse byte order within uint32 pixel values
         """
         if img_path is not None:
             self.raw_file = img_path
             self.c_yaml["platform"]["filename"] = self.raw_file
-
-        self.load_raw()
-
+    
+        self.load_raw(byte_order=byte_order)
+    
         # Print Logs to mark start of pipeline Execution
-        print(50 * "-" + "\nLoading RAW Image Done......\n")
-        print("Filename: ", self.in_file)
+        self.logger.info(50 * "-" + "\nLoading RAW Image Done......\n")
+        self.logger.info(f"Filename: {self.in_file}")
 
         # Note Initial Time for Pipeline Execution
         start = time.time()
@@ -384,10 +532,10 @@ class InfiniteISP:
         util.display_ae_statistics(self.ae_feedback, self.awb_gains)
 
         # Print Logs to mark end of pipeline Execution
-        print(50 * "-" + "\n")
+        self.logger.info(50 * "-" + "\n")
 
         # Calculate pipeline execution time
-        print(f"\nPipeline Elapsed Time: {time.time() - start:.3f}s")
+        self.logger.info(f"\nPipeline Elapsed Time: {time.time() - start:.3f}s")
 
     def load_3a_statistics(self, awb_on=True, ae_on=True):
         """

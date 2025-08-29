@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: ldci.py
 Description: Implements the contrast adjustment in the yuv domain
@@ -23,14 +24,25 @@ class LDCI:
         self.is_save = parm_ldci["is_save"]
         self.platform = platform
         self.conv_std = conv_std
+        # Initialize debug logger
+        self.logger = get_debug_logger("LDCI", config=self.platform)
 
     def apply_ldci(self):
         """
         Applying LDCI module to the given image
+        Uses optimized version with NumPy broadcast if available
         """
-        clahe = CLAHE(self.yuv, self.platform, self.sensor_info, self.parm_ldci)
+        # TEMPORARILY DISABLED: Use original version until numerical issues are fixed
+        if False and OPTIMIZED_VERSION_AVAILABLE:
+            # Use optimized version with NumPy broadcast operations
+            self.logger.info("  Using optimized CLAHE with NumPy broadcast")
+            clahe = CLAHEOPT(self.yuv, self.platform, self.sensor_info, self.parm_ldci)
+        else:
+            # Use original version
+            self.logger.info("  Using original CLAHE")
+            clahe = CLAHE(self.yuv, self.platform, self.sensor_info, self.parm_ldci)
+        
         out_ceh = clahe.apply_clahe()
-
         return out_ceh
 
     def save(self):
@@ -50,12 +62,12 @@ class LDCI:
         """
         Executing LDCI module according to user choice
         """
-        print("LDCI = " + str(self.enable))
+        self.logger.info(f"LDCI = {self.enable}")
 
         if self.enable is True:
             start = time.time()
             s_out = self.apply_ldci()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = s_out
 
         self.save()

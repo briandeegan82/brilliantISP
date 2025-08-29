@@ -1,6 +1,7 @@
+from util.debug_utils import get_debug_logger
 """
 File: noise_reduction_2d.py
-Description: Apply denoising algorithms on luminance channel
+Description: Apply denoising algorithms on luminance channel with NumPy optimizations
 Author: 10xEngineers
 ------------------------------------------------------------
 """
@@ -8,10 +9,17 @@ import time
 from util.utils import save_output_array_yuv
 from modules.noise_reduction_2d.non_local_means import NLM
 
+# Try to import optimized version with NumPy broadcast
+try:
+    from modules.noise_reduction_2d.non_local_means_optimized import NLMOptimized as NLMOPT
+    OPTIMIZED_VERSION_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_VERSION_AVAILABLE = False
+
 
 class NoiseReduction2d:
     """
-    2D Noise Reduction
+    2D Noise Reduction with NumPy optimizations
     """
 
     def __init__(self, img, sensor_info, parm_2dnr, platform, conv_std):
@@ -24,12 +32,24 @@ class NoiseReduction2d:
         self.is_leave = platform["leave_pbar_string"]
         self.is_save = parm_2dnr["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("NoiseReduction2d", config=self.platform)
 
     def apply_2dnr(self):
         """
         Applying noise reduction algorithms (EBF, NLM, Mean, BF)
+        Uses optimized version with NumPy broadcast if available
         """
-        nlm = NLM(self.img, self.sensor_info, self.parm_2dnr, self.platform)
+        # TEMPORARILY DISABLED: Use original version until numerical issues are fixed
+        if False and OPTIMIZED_VERSION_AVAILABLE:
+            # Use optimized version with NumPy broadcast operations
+            self.logger.info("  Using optimized Non-local Means with NumPy broadcast")
+            nlm = NLMOPT(self.img, self.sensor_info, self.parm_2dnr, self.platform)
+        else:
+            # Use original version
+            self.logger.info("  Using original Non-local Means")
+            nlm = NLM(self.img, self.sensor_info, self.parm_2dnr, self.platform)
+        
         return nlm.apply_nlm()
 
     def save(self):
@@ -49,12 +69,13 @@ class NoiseReduction2d:
         """
         Executing 2D noise reduction module
         """
-        print("Noise Reduction 2d = " + str(self.enable))
+        self.logger.info(f"Noise Reduction 2d = {self.enable}")
 
         if self.enable is True:
             start = time.time()
             s_out = self.apply_2dnr()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            execution_time = time.time() - start
+            self.logger.info(f"  Execution time: {execution_time:.3f}s")
             self.img = s_out
 
         self.save()

@@ -10,7 +10,15 @@ import time
 import numpy as np
 
 from util.utils import save_output_array
+from util.debug_utils import get_debug_logger
 from modules.dead_pixel_correction.dynamic_dpc import DynamicDPC as DynDPC
+
+# Try to import Numba version
+try:
+    from modules.dead_pixel_correction.dynamic_dpc_numba_optimized import DynamicDPCNumbaOptimized as DynDPCNumba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
 
 
 
@@ -29,6 +37,8 @@ class DeadPixelCorrection:
         self.is_debug = self.parm_dpc["is_debug"]
         self.is_save = parm_dpc["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("DeadPixelCorrection", config=self.platform)
 
     def padding(self):
         """Return a mirror padded copy of image."""
@@ -37,8 +47,12 @@ class DeadPixelCorrection:
         return img_pad
 
     def apply_dynamic_dpc(self):
-        """Apply DPC"""
-        dpc = DynDPC(self.img, self.sensor_info, self.parm_dpc)
+        """Apply DPC with Numba optimization if available"""
+        # Use Numba version if available and beneficial
+        if NUMBA_AVAILABLE:
+            dpc = DynDPCNumba(self.img, self.sensor_info, self.parm_dpc)
+        else:
+            dpc = DynDPC(self.img, self.sensor_info, self.parm_dpc)
         return dpc.dynamic_dpc()
 
     def save(self):
@@ -58,13 +72,14 @@ class DeadPixelCorrection:
     def execute(self):
         """Execute DPC Module"""
 
-        print("Dead Pixel Correction = " + str(self.enable))
+        self.logger.info(f"Dead Pixel Correction = {self.enable}")
 
         if self.enable:
             start = time.time()
             self.img = np.float32(self.img)
             dpc_out = self.apply_dynamic_dpc()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            execution_time = time.time() - start
+            self.logger.info(f"Execution time: {execution_time:.3f}s")
             self.img = dpc_out
 
         self.save()

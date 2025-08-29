@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: color_space_conversion.py
 Description: Converts RGB to YUV or YCbCr
@@ -33,6 +34,8 @@ class RGBConversion:
         self.conv_std = parm_csc["conv_standard"]
         self.yuv_img = img
         self.yuv2rgb_mat = None
+        # Initialize debug logger
+        self.logger = get_debug_logger("RGBConversion", config=self.platform)
 
     def yuv_to_rgb(self):
         """
@@ -104,7 +107,7 @@ class RGBConversion:
         if self.enable:
             start = time.time()
             rgb_out = self.yuv_to_rgb()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = rgb_out
         self.save()
         return self.img

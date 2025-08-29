@@ -8,6 +8,7 @@ Author: 10xEngineers Pvt Ltd
 """
 import time
 import numpy as np
+from util.debug_utils import get_debug_logger
 
 
 class AutoExposure:
@@ -24,6 +25,13 @@ class AutoExposure:
         self.sensor_info = sensor_info
         self.param_ae = parm_ae
         self.hdr_bit_depth = sensor_info["hdr_bit_depth"]
+        # Initialize debug logger with config from parm_ae
+        debug_config = {
+            'debug_enabled': parm_ae.get('is_debug', False),
+            'debug_log_level': 'INFO',
+            'debug_log_file': None
+        }
+        self.logger = get_debug_logger("AutoExposure", config=debug_config)
 
         # Pipeline modules included in AE Feedback Loop
         # (White Balance) wb module is renamed to wbc (white balance correction)
@@ -51,7 +59,7 @@ class AutoExposure:
         # For Luminance Histograms, Image is first converted into greyscale image
         # Function also returns average luminance of image which is used as AE-Stat
         grey_img, avg_lum = self.get_greyscale_image(self.img)
-        print("Average luminance is = ", avg_lum)
+        self.logger.info(f"Average luminance is = {avg_lum}")
 
         # Histogram skewness Calculation for AE Stats
         skewness = self.get_luminance_histogram_skewness(grey_img)
@@ -61,7 +69,7 @@ class AutoExposure:
         lower_limit = -1 * upper_limit
 
         if self.is_debug:
-            print("   - AE - Histogram Skewness Range = ", upper_limit)
+            self.logger.info(f"AE - Histogram Skewness Range = {upper_limit}")
 
         # see if skewness is within range
         if skewness < lower_limit:
@@ -103,7 +111,7 @@ class AutoExposure:
         skewness = np.nan_to_num((m_3 / abs(m_2) ** (3 / 2)) * g_1)
 
         if self.is_debug:
-            print("   - AE - Histogram Skewness = ", skewness)
+            self.logger.info(f"AE - Histogram Skewness = {skewness}")
 
         return skewness
 
@@ -111,12 +119,13 @@ class AutoExposure:
         """
         Execute Auto Exposure
         """
-        print("Auto Exposure= " + str(self.enable))
+        self.logger.info(f"Auto Exposure = {self.enable}")
 
         if self.enable is False:
             return None
         else:
             start = time.time()
             ae_feedback = self.get_exposure_feedback()
-            print(f"  Execution time: {time.time()-start:.3f}s")
+            execution_time = time.time() - start
+            self.logger.info(f"Execution time: {execution_time:.3f}s")
             return ae_feedback

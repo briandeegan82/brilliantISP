@@ -7,7 +7,22 @@ Author: 10xEngineers
 import time
 import numpy as np
 from util.utils import save_output_array
+from util.debug_utils import get_debug_logger, is_debug_enabled
 from modules.demosaic.malvar_he_cutler import Malvar as MAL
+
+# Try to import CuPy version
+try:
+    from modules.demosaic.malvar_he_cutler_cupy import MalvarCuPy as MALCUPY
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+
+# Import bilinear demosaic options
+from modules.demosaic.bilinear_demosaic import (
+    BilinearDemosaic as BILINEAR,
+    BilinearDemosaicOptimized as BILINEAR_OPT,
+    BilinearDemosaicFast as BILINEAR_FAST
+)
 
 
 class Demosaic:
@@ -20,6 +35,10 @@ class Demosaic:
         self.is_save = parm_dga["is_save"]
         self.sensor_info = sensor_info
         self.platform = platform
+        # Get algorithm from config, default to "malvar" if not specified
+        self.algorithm = parm_dga.get("algorithm", "malvar")
+        # Initialize debug logger
+        self.logger = get_debug_logger("Demosaic", config=self.platform)
 
     def masks_cfa_bayer(self):
         """
@@ -46,14 +65,42 @@ class Demosaic:
         # [ [ True, False, True, False], [ False, False, False, False]]
         return tuple(channels[c] for c in "rgb")
 
-    def apply_cfa(self):
+    def apply_cfa(self, algorithm="malvar"):
         """
         Demosaicing the given raw image using given algorithm
+        
+        Args:
+            algorithm (str): Demosaic algorithm to use
+                - "malvar": Malvar-He-Cutler (default, high quality)
+                - "bilinear": Simple bilinear interpolation
+                - "bilinear_opt": Optimized bilinear using NumPy operations
+                - "bilinear_fast": Fastest bilinear using simple averaging
         """
         # 3D masks according to the given bayer
         masks = self.masks_cfa_bayer()
-        mal = MAL(self.img, masks)
-        demos_out = mal.apply_malvar()
+        
+        if algorithm == "malvar":
+            # Use CuPy version if available and beneficial
+            if CUPY_AVAILABLE:
+                mal = MALCUPY(self.img, masks)
+            else:
+                mal = MAL(self.img, masks)
+            demos_out = mal.apply_malvar()
+            
+        elif algorithm == "bilinear":
+            bilinear = BILINEAR(self.img, masks)
+            demos_out = bilinear.apply_bilinear()
+            
+        elif algorithm == "bilinear_opt":
+            bilinear_opt = BILINEAR_OPT(self.img, masks)
+            demos_out = bilinear_opt.apply_bilinear_optimized()
+            
+        elif algorithm == "bilinear_fast":
+            bilinear_fast = BILINEAR_FAST(self.img, masks)
+            demos_out = bilinear_fast.apply_bilinear_fast()
+            
+        else:
+            raise ValueError(f"Unknown demosaic algorithm: {algorithm}")
 
         # Clipping the pixels values within the bit range
         demos_out = np.clip(demos_out, 0, 2**self.bit_depth - 1)
@@ -74,14 +121,26 @@ class Demosaic:
                 self.sensor_info["bayer_pattern"],
             )
 
-    def execute(self):
+    def execute(self, algorithm=None):
         """
         Applying demosaicing to bayer image
+        
+        Args:
+            algorithm (str, optional): Demosaic algorithm to use. If None, uses algorithm from config.
+                - "malvar": Malvar-He-Cutler (default, high quality)
+                - "bilinear": Simple bilinear interpolation
+                - "bilinear_opt": Optimized bilinear using NumPy operations
+                - "bilinear_fast": Fastest bilinear using simple averaging
         """
-        print("CFA interpolation (default) = True")
+        # Use algorithm from config if not specified
+        if algorithm is None:
+            algorithm = self.algorithm
+            
+        self.logger.info(f"CFA interpolation using {algorithm} algorithm")
         start = time.time()
-        cfa_out = self.apply_cfa()
-        print(f"  Execution time: {time.time() - start:.3f}s")
+        cfa_out = self.apply_cfa(algorithm)
+        execution_time = time.time() - start
+        self.logger.info(f"Execution time: {execution_time:.3f}s")
         self.img = cfa_out
         self.save()
         return self.img

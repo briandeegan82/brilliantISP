@@ -1,3 +1,4 @@
+from util.debug_utils import get_debug_logger
 """
 File: oecf.py
 Description: Implements the opto electronic conversion function as a LUT
@@ -21,6 +22,8 @@ class OECF:
         self.parm_oecf = parm_oecf
         self.is_save = parm_oecf["is_save"]
         self.platform = platform
+        # Initialize debug logger
+        self.logger = get_debug_logger("OECF", config=self.platform)
 
     def apply_oecf(self):
         """Execute OECF."""
@@ -83,12 +86,13 @@ class OECF:
 
     def execute(self):
         """Execute OECF if enabled."""
-        print("Optical Electronic Conversion Function = " + str(self.enable))
+        self.logger.info(f"Optical Electronic Conversion Function = {self.enable}")
 
         if self.enable:
             start = time.time()
             oecf_out = self.apply_oecf()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            execution_time = time.time() - start
+            self.logger.info(f"Execution time: {execution_time:.3f}s")
             self.img = oecf_out
         self.save()
         return self.img
