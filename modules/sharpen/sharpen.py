@@ -1,7 +1,7 @@
 from util.debug_utils import get_debug_logger
 """
 File: sharpen.py
-Description: Implements sharpening for Infinite-ISP with GPU acceleration.
+Description: Implements sharpening for Brilliant-ISP with GPU acceleration.
 Code / Paper  Reference:
 Author: 10xEngineers Pvt Ltd
 """

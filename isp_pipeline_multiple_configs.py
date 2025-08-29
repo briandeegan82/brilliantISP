@@ -10,7 +10,7 @@ import os
 import time
 import yaml
 from pathlib import Path
-from infinite_isp import InfiniteISP
+from brilliant_isp import BrilliantISP
 
 # Configuration
 RAW_DATA = "./in_frames/hdr_mode/"
@@ -165,11 +165,11 @@ def process_with_config(config_path, output_suffix=""):
         print(f"{'='*60}")
         
         # Initialize ISP with the configuration
-        infinite_isp = InfiniteISP(RAW_DATA, config_path, output_path)
+        brilliant_isp = BrilliantISP(RAW_DATA, config_path, output_path)
         
         # Execute the pipeline
         start_time = time.time()
-        infinite_isp.execute(img_path=FILENAME, load_method='3byte', byte_order='big')
+        brilliant_isp.execute(img_path=FILENAME, load_method='3byte', byte_order='big')
         end_time = time.time()
         
         print(f"✓ Successfully processed with {config_name}")

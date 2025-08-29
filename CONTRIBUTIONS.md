@@ -1,5 +1,5 @@
-# Contributing to Infinite-ISP
-Infinite-ISP has an "open innovation" approach, which welcomes anyone with the right skills, time, and interest to contribute generously to executing the ISP framework from the software to the hardware level. It is a community-driven project so you can contribute whether it is:
+# Contributing to Brilliant-ISP
+Brilliant-ISP has an "open innovation" approach, which welcomes anyone with the right skills, time, and interest to contribute generously to executing the ISP framework from the software to the hardware level. It is a community-driven project so you can contribute whether it is:
 
 - Adding algorithms or code to add features or improvements in the pipeline 
 
@@ -14,7 +14,7 @@ If you want to contribute to the project, we recommend you see the repo issues f
 
 1.	Install Git and set up your GitHub account. 
 
-2.	Fork the infinite-isp repo and check [issues](https://github.com/xx-isp/infinite-isp/issues) to get started.
+2.	Fork the brilliant-isp repo and check [issues](https://github.com/xx-isp/infinite-isp/issues) to get started.
 3.	Create a feature branch from the `main` branch to make changes after choosing a task.
 4.	See the code guidelines to write your code. 
 5.	Run the test cases to ensure the implemented code runs fine on your local system. 
@@ -38,7 +38,7 @@ If you want to add a new algorithm or request a new feature to the pipeline, you
 ## Pull Request Process
 ### PR Submission:
 
-The pull request process for infinite-isp is purely based on merit. For making a good PR, one should read the following guidelines:
+The pull request process for brilliant-isp is purely based on merit. For making a good PR, one should read the following guidelines:
 1.	After setting up the feature branch and adding your code to it, you must ensure it runs perfectly on your system without showing any bugs.
 
 2.	Ensure you have followed the coding guidelines while implementing the algorithm.
@@ -68,7 +68,7 @@ Keep in mind the following norms while implementing the code.
 -   All the file names are written in lowercase for better compatibility. 
 -   The algorithms implementations should be put in modules/<module name>, and their interfaces should be put in isp_pipeline.py. 
 -	The relevant parameters should be updated in the config/<config.yml> file. 
--	Documentation is written in .pdf files, including all the references, images, and flowcharts, and should be put into infinite-isp/docs/.
+-	Documentation is written in .pdf files, including all the references, images, and flowcharts, and should be put into brilliant-isp/docs/.
 -	Only English (ASCII) text is allowed for comment and explanation. No other language is allowed to use. 
 ### Naming convention 
 -	All the file names should be written in lowercase.

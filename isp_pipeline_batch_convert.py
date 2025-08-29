@@ -7,7 +7,7 @@ Based on isp_pipeline_mulitple_images.py
 import os
 from pathlib import Path
 from tqdm import tqdm
-from infinite_isp import InfiniteISP
+from brilliant_isp import BrilliantISP
 
 from util.config_utils import parse_file_name, extract_raw_metadata
 
@@ -58,16 +58,16 @@ def process_single_raw_file(raw_file_path, config_path):
     config_file = os.path.join(file_dir, f"{file_stem}-configs.yml")
     
     # Initialize ISP with the file's directory and output to convert folder
-    infinite_isp = InfiniteISP(file_dir, config_path, convert_dir)
+    brilliant_isp = BrilliantISP(file_dir, config_path, convert_dir)
     
     # Set generate_tv flag to false
-    infinite_isp.c_yaml["platform"]["generate_tv"] = False
+    brilliant_isp.c_yaml["platform"]["generate_tv"] = False
     
     # Check if specific config exists for this file
     if os.path.exists(config_file):
         print(f"Found specific config: {config_file}")
-        infinite_isp.load_config(config_file)
-        infinite_isp.execute(file_name, load_method='3byte', byte_order='big')
+        brilliant_isp.load_config(config_file)
+        brilliant_isp.execute(file_name, load_method='3byte', byte_order='big')
     else:
         print(f"Using default config for: {file_name}")
         
@@ -77,19 +77,19 @@ def process_single_raw_file(raw_file_path, config_path):
                 print(f"RAW file, extracting sensor info from filename: {file_name}")
                 sensor_info = parse_file_name(file_name)
                 if sensor_info:
-                    infinite_isp.update_sensor_info(sensor_info)
+                    brilliant_isp.update_sensor_info(sensor_info)
                     print("Updated sensor_info in config")
                 else:
                     print("No information in filename - sensor_info not updated")
             else:
                 sensor_info = extract_raw_metadata(raw_file_path)
                 if sensor_info:
-                    infinite_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
+                    brilliant_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
                     print("Updated sensor_info in config")
                 else:
                     print("Not compatible file for metadata - sensor_info not updated")
         
-        infinite_isp.execute(file_name, load_method='3byte', byte_order='big')
+        brilliant_isp.execute(file_name, load_method='3byte', byte_order='big')
 
 
 def batch_convert_raw_files():

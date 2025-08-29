@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from modules.demosaic.malvar_he_cutler import Malvar as MAL
 
 
-# Infinite-ISP output directory
+# Brilliant-ISP output directory
 OUTPUT_DIR = "out_frames/"
 
 # Output directory for Module output

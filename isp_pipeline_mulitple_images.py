@@ -6,7 +6,7 @@ It also fetches if a separate config of a raw image is present othewise uses the
 import os
 from pathlib import Path
 from tqdm import tqdm
-from infinite_isp import InfiniteISP
+from brilliant_isp import BrilliantISP
 
 from util.config_utils import parse_file_name, extract_raw_metadata
 
@@ -32,16 +32,16 @@ def video_processing():
     print(f"Processing {len(raw_files)} video frames...")
     print(f"Output directory: {OUTPUT_PATH}")
 
-    infinite_isp = InfiniteISP(DATASET_PATH, CONFIG_PATH, OUTPUT_PATH)
+    brilliant_isp = BrilliantISP(DATASET_PATH, CONFIG_PATH, OUTPUT_PATH)
 
     # set generate_tv flag to false
-    infinite_isp.c_yaml["platform"]["generate_tv"] = False
-    infinite_isp.c_yaml["platform"]["render_3a"] = False
+    brilliant_isp.c_yaml["platform"]["generate_tv"] = False
+    brilliant_isp.c_yaml["platform"]["render_3a"] = False
 
     for file in tqdm(raw_files, disable=False, leave=True):
 
-        infinite_isp.execute(file)
-        infinite_isp.load_3a_statistics()
+        brilliant_isp.execute(file)
+        brilliant_isp.load_3a_statistics()
 
 
 def dataset_processing():
@@ -65,10 +65,10 @@ def dataset_processing():
         if (Path(DATASET_PATH, x).suffix in [".raw", ".NEF", ".dng", ".nef"])
     ]
 
-    infinite_isp = InfiniteISP(DATASET_PATH, default_config, OUTPUT_PATH)
+    brilliant_isp = BrilliantISP(DATASET_PATH, default_config, OUTPUT_PATH)
 
     # set generate_tv flag to false
-    infinite_isp.c_yaml["platform"]["generate_tv"] = False
+    brilliant_isp.c_yaml["platform"]["generate_tv"] = False
 
     print(f"Processing {len(raw_images)} dataset images...")
     print(f"Output directory: {OUTPUT_PATH}")
@@ -86,16 +86,16 @@ def dataset_processing():
             print(f"Found {config_file}.")
 
             # use raw config file in dataset
-            infinite_isp.load_config(DATASET_PATH + config_file)
+            brilliant_isp.load_config(DATASET_PATH + config_file)
             is_default_config = False
-            infinite_isp.execute()
+            brilliant_isp.execute()
 
         else:
             print(f"Not Found {config_file}, Changing filename in default config file.")
 
             # copy default config file
             if not is_default_config:
-                infinite_isp.load_config(default_config)
+                brilliant_isp.load_config(default_config)
                 is_default_config = True
 
             if EXTRACT_SENSOR_INFO:
@@ -106,21 +106,21 @@ def dataset_processing():
                     )
                     sensor_info = parse_file_name(raw)
                     if sensor_info:
-                        infinite_isp.update_sensor_info(sensor_info)
+                        brilliant_isp.update_sensor_info(sensor_info)
                         print("updated sensor_info into config")
                     else:
                         print("No information in filename - sensor_info not updated")
                 else:
                     sensor_info = extract_raw_metadata(DATASET_PATH + raw)
                     if sensor_info:
-                        infinite_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
+                        brilliant_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
                         print("updated sensor_info into config")
                     else:
                         print(
                             "Not compatible file for metadata - sensor_info not updated"
                         )
 
-            infinite_isp.execute(raw)
+            brilliant_isp.execute(raw)
 
 
 def find_files(filename, search_path):

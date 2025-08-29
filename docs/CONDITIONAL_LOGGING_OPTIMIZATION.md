@@ -17,7 +17,7 @@ This document describes the implementation of conditional logging optimization f
 |----------|---------------------|---------|
 | Print statements | 0.000001s | Baseline |
 | Logging enabled | 0.000041s | 68.70x slower |
-| Logging disabled | 0.000000s | Infinite speedup |
+| Logging disabled | 0.000000s | Brilliant speedup |
 
 ## 🚀 Implementation
 

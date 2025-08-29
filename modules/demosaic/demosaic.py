@@ -19,9 +19,7 @@ except ImportError:
 
 # Import bilinear demosaic options
 from modules.demosaic.bilinear_demosaic import (
-    BilinearDemosaic as BILINEAR,
-    BilinearDemosaicOptimized as BILINEAR_OPT,
-    BilinearDemosaicFast as BILINEAR_FAST
+    BilinearDemosaic as BILINEAR
 )
 
 
@@ -91,13 +89,6 @@ class Demosaic:
             bilinear = BILINEAR(self.img, masks)
             demos_out = bilinear.apply_bilinear()
             
-        elif algorithm == "bilinear_opt":
-            bilinear_opt = BILINEAR_OPT(self.img, masks)
-            demos_out = bilinear_opt.apply_bilinear_optimized()
-            
-        elif algorithm == "bilinear_fast":
-            bilinear_fast = BILINEAR_FAST(self.img, masks)
-            demos_out = bilinear_fast.apply_bilinear_fast()
             
         else:
             raise ValueError(f"Unknown demosaic algorithm: {algorithm}")

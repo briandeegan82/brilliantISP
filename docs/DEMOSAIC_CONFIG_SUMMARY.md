@@ -60,7 +60,7 @@ demosaic:
 
 #### **From Config File**
 ```bash
-python infinite_isp.py --config config/triton_490.yml
+python brilliant_isp.py --config config/triton_490.yml
 # Uses algorithm specified in config (bilinear_fast)
 ```
 

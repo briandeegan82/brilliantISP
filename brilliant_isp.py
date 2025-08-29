@@ -155,9 +155,9 @@ from modules.scale.scale import Scale
 from modules.yuv_conv_format.yuv_conv_format import YUVConvFormat as YUV_C
 
 
-class InfiniteISP:
+class BrilliantISP:
     """
-    Infinite-ISP Pipeline
+    Brilliant-ISP Pipeline
     """
 
     def __init__(self, data_path, config_path, output_path=None):
@@ -174,7 +174,7 @@ class InfiniteISP:
         from util.debug_utils import set_global_debug_enabled
         set_global_debug_enabled(self.platform.get('debug_enabled', False))
         # Initialize debug logger after config is loaded
-        self.logger = get_debug_logger("InfiniteISP", config=self.platform)
+        self.logger = get_debug_logger("BrilliantISP", config=self.platform)
 
     def load_config(self, config_path):
         """
@@ -493,14 +493,14 @@ class InfiniteISP:
                 # no further processing is needed for display
                 out_rgb = out_img
 
-            # If both RGB_C and YUV_C are enabled. Infinite-ISP will generate
+            # If both RGB_C and YUV_C are enabled. Brilliant-ISP will generate
             # an output but it will be an invalid image.
 
             util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.output_path)
 
     def execute(self, img_path=None, load_method='auto', byte_order='little'):
         """
-        Start execution of Infinite-ISP
+        Start execution of Brilliant-ISP
         
         Args:
             img_path (str): Optional path to image file
@@ -559,7 +559,7 @@ class InfiniteISP:
 
     def execute_with_3a_statistics(self):
         """
-        Execute Infinite-ISP with AWB gains and correct exposure
+        Execute Brilliant-ISP with AWB gains and correct exposure
         """
 
         # Maximum Iterations depend on total permissible gains

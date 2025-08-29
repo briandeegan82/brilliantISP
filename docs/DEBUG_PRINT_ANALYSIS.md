@@ -235,11 +235,11 @@ def execute(self, algorithm=None):
 ```bash
 # Development (with debug prints)
 export ISP_DEBUG=true
-python infinite_isp.py --config config/triton_490.yml
+python brilliant_isp.py --config config/triton_490.yml
 
 # Production (without debug prints)
 export ISP_DEBUG=false
-python infinite_isp.py --config config/triton_490.yml
+python brilliant_isp.py --config config/triton_490.yml
 ```
 
 ### **Module Modification Example**

@@ -1,8 +1,8 @@
 # HDR-ISP
-This project is based on Infinite-ISP bu 10X Engineering, which in turn is based on FastOpenISP and OpenISP. Really standing on the shoulders of giants here.
+This project is based on Brilliant-ISP bu 10X Engineering, which in turn is based on FastOpenISP and OpenISP. Really standing on the shoulders of giants here.
 
 ## Modifications
-The main modifications compared to Infinite-ISP are:
+The main modifications compared to Brilliant-ISP are:
 - Added a decompanding function to linearize companded data
 - Implemented Durand's HDR tone mapping algorithm
 - Modified the bit depth of the ISP pipeline
@@ -19,37 +19,37 @@ The ISP parameters are defined in the config .yml files
 
 ### more to follow
 
-# Infinite-ISP
-Infinite-ISP is a full-stack ISP development platform - from algorithm development to RTL design, FPGA/ASIC implementation, and associated firmware, tools, etc. It offers a unified platform that empowers ISP developers to accelerate ISP innovation. It includes a complete collection of camera pipeline modules written in Python, an FPGA bitstream & the associated Firmware for the implementation of the pipeline on the Kria KV260 development board, and lastly, a stand-alone Python-based Tuning Tool application for the pipeline. The main components of the Infinite-ISP project are listed below:
+# Brilliant-ISP
+Brilliant-ISP is a full-stack ISP development platform - from algorithm development to RTL design, FPGA/ASIC implementation, and associated firmware, tools, etc. It offers a unified platform that empowers ISP developers to accelerate ISP innovation. It includes a complete collection of camera pipeline modules written in Python, an FPGA bitstream & the associated Firmware for the implementation of the pipeline on the Kria KV260 development board, and lastly, a stand-alone Python-based Tuning Tool application for the pipeline. The main components of the Brilliant-ISP project are listed below:
 
 | Repository name        | Description      | 
 | -------------  | ------------- |
-| **[Infinite-ISP_AlgorithmDesign](https://github.com/10x-Engineers/Infinite-ISP)** :anchor:                    | Python based model of the Infinite-ISP pipeline for algorithm development |
-| **[Infinite-ISP_ReferenceModel](https://github.com/10x-Engineers/Infinite-ISP_ReferenceModel)**                      | Python based fixed-point model of the Infinite-ISP pipeline for hardware implementation |
-| **[Infinite-ISP_FPGABinaries](https://github.com/10x-Engineers/Infinite-ISP_FPGABinaries)**                                      |FPGA binaries (bitstream + firmware executable) for the Xilinx® Kria KV260’s XCK26 Zynq UltraScale + MPSoC|
-| **[Infinite-ISP_Firmware](https://github.com/10x-Engineers/Infinite-ISP_Firmware)**                                      | Firmware for the Kria kV260’s embedded Arm® Cortex®A53 processor|
-| **[Infinite-ISP_TuningTool](https://github.com/10x-Engineers/Infinite-ISP_TuningTool)**                              | Collection of calibration and analysis tools for the Infinite-ISP |
+| **[Brilliant-ISP_AlgorithmDesign](https://github.com/10x-Engineers/Infinite-ISP)** :anchor:                    | Python based model of the Brilliant-ISP pipeline for algorithm development |
+| **[Brilliant-ISP_ReferenceModel](https://github.com/10x-Engineers/Infinite-ISP_ReferenceModel)**                      | Python based fixed-point model of the Brilliant-ISP pipeline for hardware implementation |
+| **[Brilliant-ISP_FPGABinaries](https://github.com/10x-Engineers/Brilliant-ISP_FPGABinaries)**                                      |FPGA binaries (bitstream + firmware executable) for the Xilinx® Kria KV260’s XCK26 Zynq UltraScale + MPSoC|
+| **[Brilliant-ISP_Firmware](https://github.com/10x-Engineers/Brilliant-ISP_Firmware)**                                      | Firmware for the Kria kV260’s embedded Arm® Cortex®A53 processor|
+| **[Brilliant-ISP_TuningTool](https://github.com/10x-Engineers/Infinite-ISP_TuningTool)**                              | Collection of calibration and analysis tools for the Brilliant-ISP |
 
 
-# Infinite-ISP Algorithm Design: A Python-based Model for ISP Algorithm Development
-Infinite-ISP Algorithm Design is a collections of camera pipeline modules implemented at the application level for converting an input RAW image from a sensor to an output RGB image. Infinite-isp aims to contain simple to complex algorithms at each modular level.
+# Brilliant-ISP Algorithm Design: A Python-based Model for ISP Algorithm Development
+Brilliant-ISP Algorithm Design is a collections of camera pipeline modules implemented at the application level for converting an input RAW image from a sensor to an output RGB image. Brilliant-isp aims to contain simple to complex algorithms at each modular level.
 
 
-![](assets/infinite-isp-architecture-initial.png)
+![](assets/brilliant-isp-architecture-initial.png)
 
-ISP pipeline for `Infinite-ISP v1.1`
+ISP pipeline for `Brilliant-ISP v1.1`
 
 ## Objectives
-Many open-source ISPs are available over the internet. Most of them are developed by individual contributors, each having its strengths. This project aims to centralize all the open-source ISP development to a single place enabling all the ISP developers to have a single platform to contribute. InfiniteISP will not only contain the conventional algorithms but aims to contain state-of-the-art deep learning algorithms as well, enabling a clean comparison between the two. This project has no bounds to ideas and is aimed to include any algorithm that improves the overall results of the pipeline regardless of their complexity.
+Many open-source ISPs are available over the internet. Most of them are developed by individual contributors, each having its strengths. This project aims to centralize all the open-source ISP development to a single place enabling all the ISP developers to have a single platform to contribute. BrilliantISP will not only contain the conventional algorithms but aims to contain state-of-the-art deep learning algorithms as well, enabling a clean comparison between the two. This project has no bounds to ideas and is aimed to include any algorithm that improves the overall results of the pipeline regardless of their complexity.
 
 
 ## Feature Comparison Matrix
 
 A comparison of features with the famous openISP. 
 
-InfiniteISP also tries to simulate the **3A-Algorithms**.
+BrilliantISP also tries to simulate the **3A-Algorithms**.
 
-| Modules        | infiniteISP  | openISP        | 
+| Modules        | brilliantISP  | openISP        | 
 | -------------  | ------------- |  ------------- |          
 | Crop                                          | Bayer pattern safe cropping    | ---- |
 | Dead Pixel Correction                         | Modified  [Yongji's et al, Dynamic Defective Pixel Correction for Image Sensor](https://ieeexplore.ieee.org/document/9194921) | Yes |
@@ -89,7 +89,7 @@ The project assumes pip package manager as a pre-requisite.
 Follow the following steps to run the pipeline
 1.  Clone the repo using 
 ```shell
-git clone https://github.com/10xEngineersTech/Infinite-ISP_ReferenceModel
+git clone https://github.com/10xEngineersTech/Brilliant-ISP_ReferenceModel
 ```
 
 2.  Install all the requirements from the requirements file by running
@@ -112,7 +112,7 @@ RAW_DATA = './in_frames/normal/data'
 
 ## How to Run on Pipeline on Multiple Images/Dataset
 
-There is another script [isp_pipeline_multiple_images.py](isp_pipeline_multiple_images.py) that runs Infinite-ISP on multiple images with two modes:
+There is another script [isp_pipeline_multiple_images.py](isp_pipeline_multiple_images.py) that runs Brilliant-ISP on multiple images with two modes:
 
 
 1. DATASET PROCESSING
@@ -130,7 +130,7 @@ After cloning the repository and installing all the dependencies follow the foll
 DATASET_PATH = './in_frames/normal/data'
 ```
 
-2. If your dataset is present on another git repository you can use it as a submodule by using the following commands in the root directory. In the command, `<url>` is the address of git repository such as `https://github.com/<user>/<repository_name` and `<path>` is the location in your repository where you want to add the submodule and for Infinite ISP `<path>` should be `./in_frames/normal/<dataset_name>`. Please keep in mind that your `<dataset_name>` should not be `data` because directory [in_frames/normal/data](in_frames/normal/data) already exists.
+2. If your dataset is present on another git repository you can use it as a submodule by using the following commands in the root directory. In the command, `<url>` is the address of git repository such as `https://github.com/<user>/<repository_name` and `<path>` is the location in your repository where you want to add the submodule and for Brilliant ISP `<path>` should be `./in_frames/normal/<dataset_name>`. Please keep in mind that your `<dataset_name>` should not be `data` because directory [in_frames/normal/data](in_frames/normal/data) already exists.
 
 ```shell
 git submodule add <url> <path>
@@ -159,7 +159,7 @@ Here are the results of this pipeline compared with a market competitive ISP.
 The outputs of our ISP are displayed on the right, with the underlying ground truths on the left.
 
 
-&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; **ground truths**     &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; **infiniteISP** 
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; **ground truths**     &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; **brilliantISP** 
 ![](assets/Indoor1.png)
 ![](assets/Outdoor1.png)
 ![](assets/Outdoor2.png)
@@ -384,11 +384,11 @@ To be implemented
 
 
 ## FAQ
-**Why is it named infiniteISP?**
+**Why is it named brilliantISP?**
 
-ISPs are hardware dependent. In them algorithms are limited to perform to their best because of hardware limitations. InfiniteISP tends to somewhat remove this limitation and let the algorithms perform to the full potential targeting best results. 
+ISPs are hardware dependent. In them algorithms are limited to perform to their best because of hardware limitations. BrilliantISP tends to somewhat remove this limitation and let the algorithms perform to the full potential targeting best results. 
 
-**Will inifniteISP also contain algorithms that involve machine learning?**
+**Will brilliantISP also contain algorithms that involve machine learning?**
 
 Yes definitely this is mainly because it is seen that machine learning models tend to give perform much better results as compared to conventional models. The plan is as follows
 
@@ -398,9 +398,9 @@ Yes definitely this is mainly because it is seen that machine learning models te
 
 - `v1.x.x` releases will have all the necessary improvements of these conventional algorithms till release `v2.0`
 
-- From release `v2.0` infiniteISP will start implementing machine learning models for specific algorithms. 
+- From release `v2.0` brilliantISP will start implementing machine learning models for specific algorithms. 
 
-- Release `v3.0` will have infiniteISP having both conventional and deep learning algorithms (not for all pipeline modules but for specific ones)
+- Release `v3.0` will have brilliantISP having both conventional and deep learning algorithms (not for all pipeline modules but for specific ones)
 
 ## License 
 This project is licensed under Apache 2.0 (see [LICENSE](LICENSE) file).

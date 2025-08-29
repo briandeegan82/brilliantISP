@@ -69,7 +69,7 @@ demosaic:
 The algorithm is automatically selected from the config file when running the ISP pipeline:
 
 ```bash
-python infinite_isp.py --config config/triton_490.yml
+python brilliant_isp.py --config config/triton_490.yml
 ```
 
 ### **2. Programmatic Usage**
