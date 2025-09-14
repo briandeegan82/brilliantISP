@@ -132,6 +132,10 @@ color_correction_matrix:
   corrected_green: [0.0, 1.0, 0.0] #[-0.408, 1.563, -0.082]
   corrected_blue: [0.0, 0.0, 1.0] #[-0.055, -1.641, 2.695]
   is_save: false
+  # CCM from calib file
+  #corrected_red: [  1.1604,   0.0462,  -0.2067]
+  #corrected_green: [ -0.2355,   1.5297,  -0.2943]
+  #corrected_blue: [  0.0594,  -0.3915,   1.3321]
 
 gamma_correction:
   is_enable: true
@@ -146,7 +150,7 @@ auto_exposure:
 # Example usage in ISP pipeline
 hdr_durand:
   is_enable: true
-  is_save: True
+  is_save: false
   is_debug: false
   sigma_space: 8.0
   sigma_color: 8.0
@@ -165,13 +169,13 @@ color_saturation_enhancement:
   saturation_gain: 1.8
 
 ldci:
-  is_enable: true
+  is_enable: false
   clip_limit: 2.0
   wind: 128
   is_save: false
 
 sharpen:
-  is_enable: true
+  is_enable: false
   sharpen_sigma: 5
   sharpen_strength: 1
   is_save: false
@@ -189,7 +193,7 @@ rgb_conversion:
   is_save: false
 
 scale:
-  is_enable: true
+  is_enable: false
   is_debug: false
   new_width: 1280
   new_height: 1024   

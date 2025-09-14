@@ -9,8 +9,8 @@ FRAME_SIZE = 6001936  # 8 (SoF) + 8 (FSIN) + 6001920 (Image data)
 IMAGE_DATA_SIZE = IMAGE_WIDTH * IMAGE_HEIGHT * 2  # 2 bytes per pixel
 
 # Input and Output Directories
-input_directory = '/media/brian/ssd-drive/drive/input_camera_data'
-base_output_directory = '/media/brian/ssd-drive/drive/output'
+input_directory = '/media/brian/ssd-drive/colorchecker'
+base_output_directory = '/media/brian/ssd-drive/colorchecker/raw_files'
 
 # Ensure the base output directory exists
 if not os.path.exists(base_output_directory):
@@ -68,7 +68,7 @@ else:
                         image_data = frame_data[16:16 + IMAGE_DATA_SIZE]
 
                         # Only save every 10th frame
-                        if frame_index % 10 == 0:
+                        if frame_index % 30 == 0:
                             output_image_path = os.path.join(current_output_folder, f'frame_{frame_index:04d}_fsin_{fsin_timestamp}.raw')
                             with open(output_image_path, 'wb') as img_file:
                                 img_file.write(image_data)

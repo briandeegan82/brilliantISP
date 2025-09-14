@@ -136,3 +136,6 @@ yolo/
 debug_files/
 out_frames/
 in_frames/
+
+# folders
+./module_output/
