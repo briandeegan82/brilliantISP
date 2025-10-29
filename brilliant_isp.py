@@ -295,6 +295,54 @@ class BrilliantISP:
             img = rawpy.imread(raw_path)
             self.raw = img.raw_image
     
+    def show_raw_grayscale(image, normalize=True, title="Raw Bayer Image"):
+        """
+        Display a Bayer RAW image as a normalized grayscale plot.
+    
+        Args:
+            image (np.ndarray): RAW Bayer image (2D array)
+            normalize (bool): If True, normalize to [0, 1] for display
+            title (str): Title for the plot
+        """
+        if image is None:
+            print("⚠️ No image data to display.")
+            return
+    
+        # Ensure it's a 2D numpy array
+        if image.ndim != 2:
+            raise ValueError("Expected a 2D Bayer RAW image.")
+    
+        img_disp = image.astype(np.float32)
+    
+        if normalize:
+            img_disp -= img_disp.min()
+            if img_disp.max() > 0:
+                img_disp /= img_disp.max()
+    
+        plt.figure(figsize=(8, 6))
+        plt.imshow(img_disp, cmap='gray', vmin=0, vmax=1)
+        plt.title(title)
+        plt.axis('off')
+        plt.show()
+    def show_raw_hdr_grayscale(raw_image, title="HDR Bayer (Grayscale Preview)"):
+        """
+        Display a 24-bit HDR Bayer RAW image as grayscale for quick visualization.
+        Automatically normalizes to [0,1].
+        """
+        if raw_image is None:
+            print("⚠️ No image data provided.")
+            return
+    
+        img = raw_image.astype(np.float32)
+        # img -= img.min()
+        # if img.max() > 0:
+        #     img /= img.max()
+    
+        plt.figure(figsize=(8, 6))
+        plt.imshow(img, cmap='gray', vmin=0, vmax=1)
+        plt.title(title)
+        plt.axis('off')
+        plt.show()
 
     def run_pipeline(self, visualize_output=True):
         """

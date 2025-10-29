@@ -40,8 +40,8 @@ class ColorCorrectionMatrixOptimized:
 
         # OPTIMIZATION: Use vectorized normalization
         # normalize nbit to 0-1 img
-        self.img = np.float32(self.img) / (2**self.output_bit_depth - 1)
-
+        # self.img = np.float32(self.img) / (2**self.output_bit_depth - 1)
+        self.img = np.float32(self.img) / 65535 #(2**16 - 1)
         # OPTIMIZATION: Use efficient reshape and matrix multiplication
         # convert to nx3 - use reshape with -1 for automatic dimension calculation
         img1 = self.img.reshape(-1, 3)
@@ -58,8 +58,8 @@ class ColorCorrectionMatrixOptimized:
         # OPTIMIZATION: Use efficient reshape and conversion
         # convert back
         out = out.reshape(self.img.shape)
-        out = np.uint16(out * (2**self.output_bit_depth - 1))
-
+        # out = np.uint16(out * (2**self.output_bit_depth - 1))
+        out = np.uint16(out * 65535) #(2**16 - 1)
         return out
 
     def save(self):

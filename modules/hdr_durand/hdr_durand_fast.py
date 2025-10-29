@@ -90,14 +90,11 @@ class HDRDurandToneMapping:
         output_luminance = (output_luminance - np.min(output_luminance)) / (np.max(output_luminance) - np.min(output_luminance))
     
         
-        if self.output_bit_depth == 8:
-            return (output_luminance * 255).astype(np.uint8)
-        elif self.output_bit_depth == 16:
-            return (output_luminance * 65535).astype(np.uint16)
-        elif self.output_bit_depth == 32:
-            return output_luminance.astype(np.float32)
-        else:
-            raise ValueError("Unsupported output bit depth. Use 8, 16, or 32.")
+
+
+        return (output_luminance * 65535).astype(np.uint16)
+    
+
     
     def save(self):
         if self.is_save:

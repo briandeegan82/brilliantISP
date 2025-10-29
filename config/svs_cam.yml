@@ -17,7 +17,7 @@ sensor_info:
   bit_depth: 12
   width: 1920
   height: 1536
-  output_bit_depth: 8
+  output_bit_depth: 16
   sensor: "SVS"
   endian_type: "ieee-be"
   data_format: "uint32"

@@ -10,13 +10,13 @@ sensor_info:
   bayer_pattern: "rggb"
   #range: 65536
   hdr_bit_depth: 24
-  bit_depth: 24
+  bit_depth: 16
   width: 2880
   height: 1860
   output_bit_depth: 8
   sensor: "triton_490"
-  endian_type: "ieee-be"
-  data_format: "uint32"
+  endian_type: "ieee-6e"
+  data_format: "uint16"
   embedded_rows_top: 0
   embedded_rows_bottom: 0
 
@@ -121,7 +121,7 @@ demosaic:
   # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
   # - "bilinear_opt": Optimized bilinear using NumPy operations (medium speed, good quality)
   # - "bilinear_fast": Fastest bilinear using simple averaging (fastest, good quality)
-  algorithm: "bilinear_fast"
+  algorithm: "malvar"
 
 color_correction_matrix:
   #Row sum to 1 convention
@@ -129,6 +129,8 @@ color_correction_matrix:
   corrected_red: [1.5361, -0.34375, -0.19214] #[1.660, -0.527, -0.133]
   corrected_green: [-0.26489, 1.5491, -0.28418] #[-0.408, 1.563, -0.082]
   corrected_blue: [0.060547, -0.47437, 1.4138] #[-0.055, -1.641, 2.695]
+  
+  
   is_save: false
 
 gamma_correction:
@@ -203,4 +205,5 @@ yuv_conversion_format:
   is_enable: true
   conv_type: '444'
   is_save: false
+
 

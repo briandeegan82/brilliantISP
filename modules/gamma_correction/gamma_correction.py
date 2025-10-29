@@ -34,7 +34,7 @@ class GammaCorrection:
         """
         max_val = 2**bit_depth - 1
         lut = np.arange(0, max_val + 1)
-        lut = np.uint32(np.round(max_val * ((lut / max_val) ** (1 / 2.2))))
+        lut = np.uint16(np.round(max_val * ((lut / max_val) ** (1 / 2.2))))
         return lut
 
     def apply_gamma(self):
@@ -42,11 +42,20 @@ class GammaCorrection:
         Apply Gamma LUT on n-bit Image
         """
         # generate LUT
-        lut = self.generate_gamma_lut(self.output_bit_depth).T
+        # lut = self.generate_gamma_lut(self.output_bit_depth).T
+        lut = self.generate_gamma_lut(16).T #bit_depth (input)=16
 
         # apply LUT
         gamma_img = lut[self.img]
-        return gamma_img
+        if self.output_bit_depth == 8:
+            gamma_img = np.clip((gamma_img.astype(np.float32) / 65535 * 255), 0, 255).astype(np.uint8)
+            return gamma_img
+        elif self.output_bit_depth == 16:
+            return gamma_img
+        elif self.output_bit_depth == 32:
+            return gamma_img.astype(np.float32)
+        else:
+            raise ValueError("Unsupported output bit depth. Use 8, 16, or 32.")
 
     def save(self):
         """
