@@ -11,7 +11,7 @@ try:
 except ImportError:
     GPU_VERSION_AVAILABLE = False
 
-class HDRDurandToneMapping:
+class reinhdard_PTRG:
     """
     HDR Durand Tone Mapping Algorithm Implementation with GPU acceleration
     """
@@ -29,7 +29,7 @@ class HDRDurandToneMapping:
         self.sensor_info = sensor_info
         self.platform = platform
         # Initialize debug logger
-        self.logger = get_debug_logger("HDRDurandToneMapping", config=self.platform)
+        self.logger = get_debug_logger("reinhdard_PTRG", config=self.platform)
         
         # Check if GPU acceleration should be used
         self.use_gpu = False
@@ -64,36 +64,35 @@ class HDRDurandToneMapping:
     
     def apply_tone_mapping(self):
         """ Durand's tone mapping implementation. """
-        # Convert to log domain
-        epsilon = 1e-6  # Small value to avoid log(0)
-        log_luminance = np.log10(self.img + epsilon)
+
+        #%%
+        # # Reinhard TMO   
+    # --- Log-average luminance ---
+        delta = 1e-4  # to avoid log(0)
+        Lbar = np.exp(np.mean(np.log(self.img + delta)))
     
-        # Apply bilateral filter to get the base layer
-        # For efficiency, we're using OpenCV's bilateral filter
-        log_base = self.bilateral_filter(log_luminance.astype(np.float32), 
-                                   self.sigma_color, 
-                                   self.sigma_space)
+        # --- Compute Lmin and Lmax using percentiles ---
+        Lmin = np.percentile(self.img, 1)   # 1st percentile ~ MaxQuart(Lw,0.01)
+        Lmax = np.percentile(self.img, 99)  # 99th percentile ~ MaxQuart(Lw,0.99)
     
-        # Extract the detail layer
-        log_detail = log_luminance - log_base
+        # --- Compute alpha ---
+        num = 2 * np.log2(Lbar) - np.log2(Lmax) - np.log2(Lmax)
+        denom = np.log2(Lmax) - np.log2(Lmin)
+        raistopower = num / denom
+        alpha = 0.18 * (4 ** raistopower)
     
-        # Compress the base layer (reduce contrast)
-        compressed_log_base = log_base / self.contrast_factor
+        # --- Compute Lwhite ---
+        Lwhite = 1.5 * 2 ** (np.log2(Lmax) - np.log2(Lmin) - 5)
     
-        # Recombine base and detail layers
-        log_output = compressed_log_base + log_detail
+        # --- Scale luminance ---
+        L = alpha * (self.img / Lbar)
     
-        # Convert back from log domain
-        output_luminance = np.power(10, log_output)
-    
-        # Normalize to [0, 1] range
-        output_luminance = (output_luminance - np.min(output_luminance)) / (np.max(output_luminance) - np.min(output_luminance))
-    
+        # --- Reinhard tone mapping ---
+        output_luminance = (L * (1 + (L / (Lwhite ** 2)))) / (1 + L)
+
+        return output_luminance
         
-
-
-        return (output_luminance * 65535).astype(np.uint16)
-    
+        #%%
 
     
     def save(self):

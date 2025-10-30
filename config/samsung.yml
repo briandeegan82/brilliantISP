@@ -202,4 +202,23 @@ yuv_conversion_format:
   is_enable: true
   conv_type: '444'
   is_save: false
+      #Imran Modifications 
+tone_mapping:
+  # The conversion wont run if csc is false
+  is_enable: true
+  tone_mapping_before_demosaic: yes
+  tone_mapper: 'durand'
+  #tone_mapper: 'reinhardPTRGlobal'
+  #tone_mapper: 'TMOz'
+  #tone_mapper: 'reinhdard_PTRLocal'
+  is_save: false
+  
+TMOz_sorround_cond:
+   XYZw1: [95.047, 100.0, 108.883]   # D65 white point for HDR image
+   Lw1: 10000                         # HDR luminance
+   Yb: 20                            # Background luminance
+   XYZw2: [95.047, 100.0, 108.883]   # Display white point
+   Lw2: 500                         # Output luminance
+   surround: "avg"                   # Surround method
+
 

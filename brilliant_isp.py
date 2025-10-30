@@ -134,7 +134,8 @@ from modules.bayer_noise_reduction.bayer_noise_reduction import (
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
 from modules.white_balance.white_balance import WhiteBalance as WB
 from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
-from modules.hdr_durand.hdr_durand_fast import HDRDurandToneMapping as HDR
+# from modules.hdr_durand.hdr_durand_fast import HDRDurandToneMapping as HDR
+from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
 from modules.demosaic.demosaic import Demosaic
 from modules.color_correction_matrix.color_correction_matrix import (
     ColorCorrectionMatrix as CCM,
@@ -160,13 +161,14 @@ class BrilliantISP:
     Brilliant-ISP Pipeline
     """
 
-    def __init__(self, data_path, config_path, output_path=None):
+    def __init__(self, data_path, config_path, outFileName, output_path=None):
         """
         Constructor: Initialize with config and raw file path
         and Load configuration parameter from yaml file
         """
         self.data_path = data_path
         self.output_path = output_path if output_path else "out_frames/"
+        self.outFileName=outFileName
         # Ensure output directory exists
         os.makedirs(self.output_path, exist_ok=True)
         self.load_config(config_path)
@@ -217,8 +219,13 @@ class BrilliantISP:
             self.parm_cro = c_yaml["crop"]
             self.parm_yuv = c_yaml["yuv_conversion_format"]
             self.c_yaml = c_yaml
-
             self.platform["rgb_output"] = self.parm_rgb["is_enable"]
+            self.bit_depth = self.sensor_info["bit_depth"]
+            self.tone_mapping = c_yaml["tone_mapping"]
+            self.tone_mapping_before_demosaic = self.tone_mapping["tone_mapping_before_demosaic"]
+            self.tone_mapper=self.tone_mapping["tone_mapper"]
+            if self.tone_mapper=='TMOz':
+                self.TMOz_sorround_cond=c_yaml["TMOz_sorround_cond"]
 
         # add rgb_output_conversion module
 
@@ -294,55 +301,8 @@ class BrilliantISP:
         else:
             img = rawpy.imread(raw_path)
             self.raw = img.raw_image
-    
-    def show_raw_grayscale(image, normalize=True, title="Raw Bayer Image"):
-        """
-        Display a Bayer RAW image as a normalized grayscale plot.
-    
-        Args:
-            image (np.ndarray): RAW Bayer image (2D array)
-            normalize (bool): If True, normalize to [0, 1] for display
-            title (str): Title for the plot
-        """
-        if image is None:
-            print("⚠️ No image data to display.")
-            return
-    
-        # Ensure it's a 2D numpy array
-        if image.ndim != 2:
-            raise ValueError("Expected a 2D Bayer RAW image.")
-    
-        img_disp = image.astype(np.float32)
-    
-        if normalize:
-            img_disp -= img_disp.min()
-            if img_disp.max() > 0:
-                img_disp /= img_disp.max()
-    
-        plt.figure(figsize=(8, 6))
-        plt.imshow(img_disp, cmap='gray', vmin=0, vmax=1)
-        plt.title(title)
-        plt.axis('off')
-        plt.show()
-    def show_raw_hdr_grayscale(raw_image, title="HDR Bayer (Grayscale Preview)"):
-        """
-        Display a 24-bit HDR Bayer RAW image as grayscale for quick visualization.
-        Automatically normalizes to [0,1].
-        """
-        if raw_image is None:
-            print("⚠️ No image data provided.")
-            return
-    
-        img = raw_image.astype(np.float32)
-        # img -= img.min()
-        # if img.max() > 0:
-        #     img /= img.max()
-    
-        plt.figure(figsize=(8, 6))
-        plt.imshow(img, cmap='gray', vmin=0, vmax=1)
-        plt.title(title)
-        plt.axis('off')
-        plt.show()
+            
+
 
     def run_pipeline(self, visualize_output=True):
         """
@@ -407,30 +367,39 @@ class BrilliantISP:
         wb_raw = wbc.execute()
 
 
+#%%
+       # # =====================================================================
+       # HDR tone mapping before Demosaicing
+        if  self.tone_mapping_before_demosaic:
+            tone_mapper = tone_mapping(wb_raw, pipeline_self=self)
+            hdr_raw = tone_mapper.execute()
+            self.logger.info(f"HDR Image mean: {np.mean(hdr_raw)}")
+        else:
+            max_val = 2**24 - 1
+            hdr_raw = (wb_raw.astype(np.float32) * (65535.0 / max_val)).astype(np.uint16)
 
-        # =====================================================================
-        # HDR tone mapping
-        hdr = HDR(wb_raw, self.platform, self.sensor_info, self.param_durand)
-        hdr_raw = hdr.execute()
-        self.logger.info(f"HDR Image mean: {np.mean(hdr_raw)}")
-
-
-
-        # =====================================================================
+#%%        # =====================================================================
         # CFA demosaicing
         cfa_inter = Demosaic(hdr_raw, self.platform, self.sensor_info, self.parm_dem)
         demos_img = cfa_inter.execute()
         self.logger.info(f"Demosaiced Image mean: {np.mean(demos_img)}")
-
-
-
+        
         # =====================================================================
         # Color correction matrix
         # Use optimized version for better performance
         ccm = CCMOPT(demos_img, self.platform, self.sensor_info, self.parm_ccm)
         ccm_img = ccm.execute()
         self.logger.info(f"CCM Image mean: {np.mean(ccm_img)}")
+        #%%
 
+        # =====================================================================
+        # HDR tone mapping after Demosaicing
+        if not self.tone_mapping_before_demosaic:
+            tone_mapper = tone_mapping(ccm_img, pipeline_self=self)
+            CCM_tone_mapped = tone_mapper.execute()
+            self.logger.info(f"HDR Image mean: {np.mean(CCM_tone_mapped)}")
+            ccm_img = CCM_tone_mapped
+            
         # =====================================================================
         # Gamma
         gmc = GC(ccm_img, self.platform, self.sensor_info, self.parm_gmc)
@@ -543,8 +512,9 @@ class BrilliantISP:
 
             # If both RGB_C and YUV_C are enabled. Brilliant-ISP will generate
             # an output but it will be an invalid image.
+            self.outFileName= self.outFileName + "TM_" + str(self.tone_mapper) + "_s_" + str(self.parm_cse['saturation_gain']) +"_CCM_" +str(self.parm_ccm['is_enable']) + "_Before_Demosaic_" + str(self.tone_mapping_before_demosaic)
 
-            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.output_path)
+            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.outFileName, self.output_path)
 
     def execute(self, img_path=None, load_method='auto', byte_order='little'):
         """

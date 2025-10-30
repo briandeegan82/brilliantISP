@@ -10,12 +10,12 @@ sensor_info:
   bayer_pattern: "rggb"
   #range: 65536
   hdr_bit_depth: 24
-  bit_depth: 16
+  bit_depth: 12
   width: 2880
   height: 1860
   output_bit_depth: 8
   sensor: "triton_490"
-  endian_type: "ieee-6e"
+  endian_type: "ieee-le"
   data_format: "uint16"
   embedded_rows_top: 0
   embedded_rows_bottom: 0
@@ -129,8 +129,6 @@ color_correction_matrix:
   corrected_red: [1.5361, -0.34375, -0.19214] #[1.660, -0.527, -0.133]
   corrected_green: [-0.26489, 1.5491, -0.28418] #[-0.408, 1.563, -0.082]
   corrected_blue: [0.060547, -0.47437, 1.4138] #[-0.055, -1.641, 2.695]
-  
-  
   is_save: false
 
 gamma_correction:
@@ -205,5 +203,25 @@ yuv_conversion_format:
   is_enable: true
   conv_type: '444'
   is_save: false
+
+     #Imran Modifications 
+tone_mapping:
+  # The conversion wont run if csc is false
+  is_enable: true
+  tone_mapping_before_demosaic: yes
+  tone_mapper: 'durand'
+  #tone_mapper: 'reinhardPTRGlobal'
+  #tone_mapper: 'TMOz'
+  #tone_mapper: 'reinhdard_PTRLocal'
+  is_save: false
+  
+TMOz_sorround_cond:
+   XYZw1: [95.047, 100.0, 108.883]   # D65 white point for HDR image
+   Lw1: 10000                         # HDR luminance
+   Yb: 20                            # Background luminance
+   XYZw2: [95.047, 100.0, 108.883]   # Display white point
+   Lw2: 500                         # Output luminance
+   surround: "avg"                   # Surround method
+
 
 
