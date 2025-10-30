@@ -4,7 +4,9 @@ This project is based on infiniteISP by 10X Engineering, which in turn is based 
 ## Modifications
 The main modifications compared to infiniteISP are:
 - Added a decompanding function to linearize companded data
-- Implemented Durand's HDR tone mapping algorithm
+- Tone Mapping module is added
+    - Tone mapping can be applied before or after demosaicing
+    - Durand's TMO, Reinhard's global and local TMO ([Photographic Tone Reproduction operators](https://jamesferwerda.com/wp-content/uploads/2015/06/j10_reinhard02_sig.pdf)) and [TMOz](https://github.com/imrankanjoo/TMOz)
 - Modified the bit depth of the ISP pipeline
 - updated debug logging
 - optimized execution time (ongoing)
