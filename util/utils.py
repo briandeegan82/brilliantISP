@@ -226,37 +226,29 @@ def get_image_from_yuv_format_conversion(yuv_img, height, width, yuv_custom_form
     return yuv_img
 
 
-def save_pipeline_output(img_name, output_img, config_file, outFileName, output_dir=None):
+def save_pipeline_output(img_name, output_img, config_file, outFileName, output_dir=None, short_names=False):
     """
-    Saves the output image (png) and config file in OUTPUT_DIR
+    Saves the output image (png) and config file in OUTPUT_DIR.
+
+    Args:
+        short_names: If True, use compact filenames: {img_name}_{timestamp}.png
     """
-    
-    # Use provided output_dir or default to OUTPUT_DIR
     save_dir = output_dir if output_dir else OUTPUT_DIR
-    
-    # Ensure output directory exists
     os.makedirs(save_dir, exist_ok=True)
-
-    # Time Stamp for output filename
     dt_string = datetime.now().strftime("_%Y%m%d_%H%M%S")
-
-    # Set list format to flowstyle to dump yaml file
     yaml.add_representer(list, represent_list)
 
-    # Storing configuration file for output image
-    with open(
-        os.path.join(save_dir, img_name + dt_string + ".yaml"), "w", encoding="utf-8"
-    ) as file:
-        yaml.dump(
-            config_file,
-            file,
-            sort_keys=False,
-            Dumper=CustomDumper,
-            width=17000,
-        )
+    if short_names:
+        base = img_name + dt_string
+        yaml_path = os.path.join(save_dir, base + ".yaml")
+        png_path = os.path.join(save_dir, base + ".png")
+    else:
+        yaml_path = os.path.join(save_dir, img_name + dt_string + ".yaml")
+        png_path = os.path.join(save_dir, img_name + "_" + outFileName + "_" + dt_string + ".png")
 
-    # Save Image as .png
-    plt.imsave(os.path.join(save_dir, img_name +"_" + outFileName + "_" + dt_string + ".png"), output_img)
+    with open(yaml_path, "w", encoding="utf-8") as file:
+        yaml.dump(config_file, file, sort_keys=False, Dumper=CustomDumper, width=17000)
+    plt.imsave(png_path, output_img)
 
 
 # utilities to save the config_automate exactly as config.yml

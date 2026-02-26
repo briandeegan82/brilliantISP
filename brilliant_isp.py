@@ -215,7 +215,8 @@ class BrilliantISP:
         path_object = Path(self.data_path, self.raw_file)
         raw_path = str(path_object.resolve())
         self.in_file = path_object.stem
-        self.out_file = "Out_" + self.in_file  # Just the filename, not the full path
+        short_names = self.platform.get("short_output_names", False)
+        self.out_file = self.in_file if short_names else "Out_" + self.in_file
 
         self.platform["in_file"] = self.in_file
         self.platform["out_file"] = self.out_file
@@ -294,51 +295,68 @@ class BrilliantISP:
         """
         Simulation of ISP-Pipeline
         """
+        skip_disabled = self.platform.get("skip_disabled_modules", False)
 
         # =====================================================================
         # Cropping
-        crop = Crop(self.raw, self.platform, self.sensor_info, self.parm_cro)
-        cropped_img = crop.execute()
+        if skip_disabled and not self.parm_cro["is_enable"]:
+            cropped_img = self.raw
+        else:
+            crop = Crop(self.raw, self.platform, self.sensor_info, self.parm_cro)
+            cropped_img = crop.execute()
 
         # =====================================================================
-        #  Dead pixels correction
-        dpc = DPC(cropped_img, self.sensor_info, self.parm_dpc, self.platform)
-        dpc_raw = dpc.execute()
+        # Dead pixels correction
+        if skip_disabled and not self.parm_dpc["is_enable"]:
+            dpc_raw = cropped_img
+        else:
+            dpc = DPC(cropped_img, self.sensor_info, self.parm_dpc, self.platform)
+            dpc_raw = dpc.execute()
 
         # =====================================================================
         # Black level correction
-        blc = BLC(dpc_raw, self.platform, self.sensor_info, self.parm_blc)
-        blc_raw = blc.execute()
-
+        if skip_disabled and not self.parm_blc["is_enable"]:
+            blc_raw = dpc_raw
+        else:
+            blc = BLC(dpc_raw, self.platform, self.sensor_info, self.parm_blc)
+            blc_raw = blc.execute()
 
         # =====================================================================
         # decompanding
-        cmpd = PWC(blc_raw, self.platform, self.sensor_info, self.parm_cmpd)
-        cmpd_raw = cmpd.execute()
+        if skip_disabled and not self.parm_cmpd["is_enable"]:
+            cmpd_raw = blc_raw.astype(np.uint32)
+        else:
+            cmpd = PWC(blc_raw, self.platform, self.sensor_info, self.parm_cmpd)
+            cmpd_raw = cmpd.execute()
 
         # =====================================================================
         # OECF
-        oecf = OECF(cmpd_raw, self.platform, self.sensor_info, self.parm_oec)
-        oecf_raw = oecf.execute()
+        if skip_disabled and not self.parm_oec.get("is_enable", False):
+            oecf_raw = cmpd_raw
+        else:
+            oecf = OECF(cmpd_raw, self.platform, self.sensor_info, self.parm_oec)
+            oecf_raw = oecf.execute()
 
         # =====================================================================
         # Digital Gain (receives OECF output per pipeline order: PWC -> OECF -> DG)
         dga = DG(oecf_raw, self.platform, self.sensor_info, self.parm_dga)
         dga_raw, self.dga_current_gain = dga.execute()
 
-
-
         # =====================================================================
         # Lens shading correction
-        lsc = LSC(dga_raw, self.platform, self.sensor_info, self.parm_lsc)
-        lsc_raw = lsc.execute()
-
-
+        if skip_disabled and not self.parm_lsc.get("is_enable", True):
+            lsc_raw = dga_raw
+        else:
+            lsc = LSC(dga_raw, self.platform, self.sensor_info, self.parm_lsc)
+            lsc_raw = lsc.execute()
 
         # =====================================================================
         # Bayer noise reduction
-        bnr = BNR(lsc_raw, self.sensor_info, self.parm_bnr, self.platform)
-        bnr_raw = bnr.execute()
+        if skip_disabled and not self.parm_bnr["is_enable"]:
+            bnr_raw = lsc_raw
+        else:
+            bnr = BNR(lsc_raw, self.sensor_info, self.parm_bnr, self.platform)
+            bnr_raw = bnr.execute()
 
 
         # =====================================================================
@@ -406,36 +424,45 @@ class BrilliantISP:
 
         # =====================================================================
         # Local Dynamic Contrast Improvement
-        ldci = LDCI(
-            csc_img,
-            self.platform,
-            self.sensor_info,
-            self.parm_ldci,
-            self.parm_csc["conv_standard"],
-        )
-        ldci_img = ldci.execute()
+        if skip_disabled and not self.parm_ldci["is_enable"]:
+            ldci_img = csc_img
+        else:
+            ldci = LDCI(
+                csc_img,
+                self.platform,
+                self.sensor_info,
+                self.parm_ldci,
+                self.parm_csc["conv_standard"],
+            )
+            ldci_img = ldci.execute()
 
         # =====================================================================
         # Sharpening
-        sharp = SHARP(
-            ldci_img,
-            self.platform,
-            self.sensor_info,
-            self.parm_sha,
-            self.parm_csc["conv_standard"],
-        )
-        sharp_img = sharp.execute()
+        if skip_disabled and not self.parm_sha["is_enable"]:
+            sharp_img = ldci_img
+        else:
+            sharp = SHARP(
+                ldci_img,
+                self.platform,
+                self.sensor_info,
+                self.parm_sha,
+                self.parm_csc["conv_standard"],
+            )
+            sharp_img = sharp.execute()
 
         # =====================================================================
         # 2d noise reduction
-        nr2d = NR2D(
-            sharp_img,
-            self.sensor_info,
-            self.parm_2dn,
-            self.platform,
-            self.parm_csc["conv_standard"],
-        )
-        nr2d_img = nr2d.execute()
+        if skip_disabled and not self.parm_2dn["is_enable"]:
+            nr2d_img = sharp_img
+        else:
+            nr2d = NR2D(
+                sharp_img,
+                self.sensor_info,
+                self.parm_2dn,
+                self.platform,
+                self.parm_csc["conv_standard"],
+            )
+            nr2d_img = nr2d.execute()
 
         # =====================================================================
         # RGB conversion
@@ -446,14 +473,17 @@ class BrilliantISP:
 
         # =====================================================================
         # Scaling
-        scale = Scale(
-            rgbc_img,
-            self.platform,
-            self.sensor_info,
-            self.parm_sca,
-            self.parm_csc["conv_standard"],
-        )
-        scaled_img = scale.execute()
+        if skip_disabled and not self.parm_sca["is_enable"]:
+            scaled_img = rgbc_img
+        else:
+            scale = Scale(
+                rgbc_img,
+                self.platform,
+                self.sensor_info,
+                self.parm_sca,
+                self.parm_csc["conv_standard"],
+            )
+            scaled_img = scale.execute()
 
         # =====================================================================
         # YUV saving format 444, 422 etc
@@ -498,9 +528,11 @@ class BrilliantISP:
 
             # If both RGB_C and YUV_C are enabled. Brilliant-ISP will generate
             # an output but it will be an invalid image.
-            self.outFileName= self.outFileName + "TM_" + str(self.tone_mapper) + "_s_" + str(self.parm_cse['saturation_gain']) +"_CCM_" +str(self.parm_ccm['is_enable']) + "_Before_Demosaic_" + str(self.tone_mapping_before_demosaic)
+            short_names = self.platform.get("short_output_names", False)
+            if not short_names:
+                self.outFileName = self.outFileName + "TM_" + str(self.tone_mapper) + "_s_" + str(self.parm_cse['saturation_gain']) + "_CCM_" + str(self.parm_ccm['is_enable']) + "_Before_Demosaic_" + str(self.tone_mapping_before_demosaic)
 
-            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.outFileName, self.output_path)
+            util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.outFileName, self.output_path, short_names=short_names)
 
     def execute(self, img_path=None, load_method='auto', byte_order='little'):
         """

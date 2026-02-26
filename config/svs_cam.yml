@@ -5,6 +5,8 @@ platform:
   render_3a: false
   # npy, png or both
   save_format: png
+  # short_output_names: true  # compact filenames: {in_file}_{timestamp}.png
+  # skip_disabled_modules: true  # skip instantiating disabled modules (performance)
   # Global debug settings
   debug_enabled: true # Set to true to enable debug logging
   debug_log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
