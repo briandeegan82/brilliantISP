@@ -21,82 +21,38 @@ from util.debug_utils import get_debug_logger
 
 def read_hdr_3byte(file_path, width, height, byte_order='little'):
     """
-    Read HDR image using 3 consecutive bytes per pixel with reversed uint32 byte order
+    Read HDR image using 3 consecutive bytes per pixel (24-bit packed).
+    Little: LSB first (b0 | b1<<8 | b2<<16). Big: MSB first (b0<<16 | b1<<8 | b2).
     """
     with open(file_path, 'rb') as f:
         data = f.read()
-    
     expected_size = width * height * 3
     actual_size = len(data)
-    
     if actual_size < expected_size:
-        import logging
-        log = logging.getLogger("BrilliantISP.RawLoader")
-        log.warning(f"File size {actual_size} bytes is smaller than expected {expected_size} bytes")
         return None
-    
-    pixels = []
-    for i in range(0, min(actual_size, expected_size), 3):
-        if i + 2 < len(data):
-            if byte_order == 'little':
-                # Convert bytes to hex first, then combine in hex space
-                hex_byte1 = hex(data[i])[2:].zfill(2)  # Remove '0x' and pad to 2 digits
-                hex_byte2 = hex(data[i+1])[2:].zfill(2)
-                hex_byte3 = hex(data[i+2])[2:].zfill(2)
-            
-                # Combine in hex space: little endian (least significant byte first)
-                hex_pixel = hex_byte1 + hex_byte2 + hex_byte3
-                pixel_value = int(hex_pixel, 16)  # Convert hex to decimal
-            else:
-                # Big endian (most significant byte first)
-                hex_byte1 = hex(data[i])[2:].zfill(2)
-                hex_byte2 = hex(data[i+1])[2:].zfill(2)
-                hex_byte3 = hex(data[i+2])[2:].zfill(2)
-            
-                # Combine in hex space: big endian
-                hex_pixel = hex_byte3 + hex_byte2 + hex_byte1
-                pixel_value = int(hex_pixel, 16)  # Convert hex to decimal
-        
-        pixels.append(pixel_value)
-    
-    image = np.array(pixels, dtype=np.uint32)
-    image = image.reshape((height, width))
-    
-    return image
+    data = np.frombuffer(data[:expected_size], dtype=np.uint8)
+    data = data.reshape(-1, 3)
+    b0, b1, b2 = data[:, 0].astype(np.uint32), data[:, 1].astype(np.uint32), data[:, 2].astype(np.uint32)
+    if byte_order == 'little':
+        pixels = b0 | (b1 << 8) | (b2 << 16)
+    else:
+        pixels = (b0 << 16) | (b1 << 8) | b2
+    return pixels.reshape(height, width)
 
 def read_hdr_uint16(file_path, width, height, byte_order='little'):
     """
-    Read HDR image using uint16 pairs as uint32 pixels
+    Read HDR image using uint16 pairs as uint32 pixels (low word | high word << 16).
     """
     with open(file_path, 'rb') as f:
         data = f.read()
-    
     expected_size = width * height * 4
     actual_size = len(data)
-    
     if actual_size < expected_size:
-        import logging
-        log = logging.getLogger("BrilliantISP.RawLoader")
-        log.warning(f"File size {actual_size} bytes is smaller than expected {expected_size} bytes")
         return None
-    
-    if byte_order == 'little':
-        dtype = '<u2'
-    else:
-        dtype = '>u2'
-    
-    uint16_data = np.frombuffer(data[:min(actual_size, expected_size)], dtype=dtype)
-    
-    pixels = []
-    for i in range(0, len(uint16_data), 2):
-        if i + 1 < len(uint16_data):
-            pixel_value = uint16_data[i] | (uint16_data[i+1] << 16)
-            pixels.append(pixel_value)
-    
-    image = np.array(pixels, dtype=np.uint32)
-    image = image.reshape((height, width))
-    
-    return image
+    dtype = '<u2' if byte_order == 'little' else '>u2'
+    uint16_data = np.frombuffer(data[:expected_size], dtype=dtype)
+    pixels = uint16_data[0::2].astype(np.uint32) | (uint16_data[1::2].astype(np.uint32) << 16)
+    return pixels.reshape(height, width)
 
 def analyze_file_size(file_path, logger=None):
     """Analyze file size to suggest possible dimensions"""
@@ -172,63 +128,78 @@ class BrilliantISP:
         # Initialize debug logger after config is loaded
         self.logger = get_debug_logger("BrilliantISP", config=self.platform)
 
+    _REQUIRED_CONFIG_KEYS = (
+        "platform", "sensor_info", "dead_pixel_correction", "companding", "digital_gain",
+        "lens_shading_correction", "bayer_noise_reduction", "black_level_correction",
+        "white_balance", "auto_white_balance", "demosaic", "auto_exposure",
+        "color_correction_matrix", "gamma_correction", "hdr_durand", "tone_mapping",
+        "color_space_conversion", "color_saturation_enhancement", "ldci", "sharpen",
+        "2d_noise_reduction", "rgb_conversion", "scale", "crop", "yuv_conversion_format",
+    )
+
     def load_config(self, config_path):
         """
-        Load config information to respective module parameters
+        Load config information to respective module parameters.
+        Validates required keys and uses defaults for optional sections.
         """
         self.config_path = config_path
         with open(config_path, "r", encoding="utf-8") as file:
             c_yaml = yaml.safe_load(file)
 
-            # Extract workspace info
-            self.platform = c_yaml["platform"]
-            self.raw_file = self.platform["filename"]
-            self.render_3a = self.platform["render_3a"]
+        missing = [k for k in self._REQUIRED_CONFIG_KEYS if k not in c_yaml]
+        if missing:
+            raise KeyError(
+                f"Config '{config_path}' missing required keys: {missing}. "
+                "See config/svs_cam.yml for reference."
+            )
 
-            # Extract basic sensor info
-            self.sensor_info = c_yaml["sensor_info"]
+        # Extract workspace info
+        self.platform = c_yaml["platform"]
+        self.raw_file = self.platform["filename"]
+        self.render_3a = self.platform["render_3a"]
+        self.sensor_info = c_yaml["sensor_info"]
 
-            # Get isp module params
-            self.parm_dpc = c_yaml["dead_pixel_correction"]
-            self.parm_cmpd = c_yaml["companding"]
-            self.parm_dga = c_yaml["digital_gain"]
-            self.parm_lsc = c_yaml["lens_shading_correction"]
-            self.parm_bnr = c_yaml["bayer_noise_reduction"]
-            self.parm_blc = c_yaml["black_level_correction"]
-            self.parm_oec = c_yaml["oecf"]
-            self.parm_wbc = c_yaml["white_balance"]
-            self.parm_awb = c_yaml["auto_white_balance"]
-            self.parm_dem = c_yaml["demosaic"]
-            self.parm_ae = c_yaml["auto_exposure"]
-            self.parm_ccm = c_yaml["color_correction_matrix"]
-            self.parm_gmc = c_yaml["gamma_correction"]
-            self.param_durand = c_yaml["hdr_durand"]
+        # ISP module params
+        self.parm_dpc = c_yaml["dead_pixel_correction"]
+        self.parm_cmpd = c_yaml["companding"]
+        self.parm_dga = c_yaml["digital_gain"]
+        self.parm_lsc = c_yaml["lens_shading_correction"]
+        self.parm_bnr = c_yaml["bayer_noise_reduction"]
+        self.parm_blc = c_yaml["black_level_correction"]
+        self.parm_oec = c_yaml.get("oecf", {"is_enable": False, "is_save": False})
+        self.parm_wbc = c_yaml["white_balance"]
+        self.parm_awb = c_yaml["auto_white_balance"]
+        self.parm_dem = c_yaml["demosaic"]
+        self.parm_ae = c_yaml["auto_exposure"]
+        self.parm_ccm = c_yaml["color_correction_matrix"]
+        self.parm_gmc = c_yaml["gamma_correction"]
+        self.param_durand = c_yaml["hdr_durand"]
+        self.param_aces = c_yaml.get("aces", {})
+        self.parm_csc = c_yaml["color_space_conversion"]
+        self.parm_cse = c_yaml["color_saturation_enhancement"]
+        self.parm_ldci = c_yaml["ldci"]
+        self.parm_sha = c_yaml["sharpen"]
+        self.parm_2dn = c_yaml["2d_noise_reduction"]
+        self.parm_rgb = c_yaml["rgb_conversion"]
+        self.parm_sca = c_yaml["scale"]
+        self.parm_cro = c_yaml["crop"]
+        self.parm_yuv = c_yaml["yuv_conversion_format"]
+        self.c_yaml = c_yaml
+        self.platform["rgb_output"] = self.parm_rgb["is_enable"]
+        self.bit_depth = self.sensor_info["bit_depth"]
+        self.tone_mapping = c_yaml["tone_mapping"]
+        self.tone_mapping_before_demosaic = self.tone_mapping["tone_mapping_before_demosaic"]
+        self.tone_mapper = self.tone_mapping["tone_mapper"]
+        if self.tone_mapper == "aces":
             self.param_aces = c_yaml.get("aces", {})
-            self.parm_csc = c_yaml["color_space_conversion"]
-            self.parm_cse = c_yaml["color_saturation_enhancement"]
-            self.parm_ldci = c_yaml["ldci"]
-            self.parm_sha = c_yaml["sharpen"]
-            self.parm_2dn = c_yaml["2d_noise_reduction"]
-            self.parm_rgb = c_yaml["rgb_conversion"]
-            self.parm_sca = c_yaml["scale"]
-            self.parm_cro = c_yaml["crop"]
-            self.parm_yuv = c_yaml["yuv_conversion_format"]
-            self.c_yaml = c_yaml
-            self.platform["rgb_output"] = self.parm_rgb["is_enable"]
-            self.bit_depth = self.sensor_info["bit_depth"]
-            self.tone_mapping = c_yaml["tone_mapping"]
-            self.tone_mapping_before_demosaic = self.tone_mapping["tone_mapping_before_demosaic"]
-            self.tone_mapper=self.tone_mapping["tone_mapper"]
-            if self.tone_mapper == "aces":
-                self.param_aces = c_yaml.get("aces", {})
-            if self.tone_mapper == "integer":
-                self.param_integer_tmo = c_yaml.get("integer_tmo", {})
-            if self.tone_mapper == "aces_integer":
-                self.param_aces_integer = c_yaml.get("aces_integer", {})
-            if self.tone_mapper == "hable":
-                self.param_hable = c_yaml.get("hable", {})
-            if self.tone_mapper == "hable_integer":
-                self.param_hable_integer = c_yaml.get("hable_integer", {})
+        if self.tone_mapper == "integer":
+            self.param_integer_tmo = c_yaml.get("integer_tmo", {})
+        if self.tone_mapper == "aces_integer":
+            self.param_aces_integer = c_yaml.get("aces_integer", {})
+        if self.tone_mapper == "hable":
+            self.param_hable = c_yaml.get("hable", {})
+        if self.tone_mapper == "hable_integer":
+            self.param_hable_integer = c_yaml.get("hable_integer", {})
 
         # add rgb_output_conversion module
 
@@ -268,23 +239,35 @@ class BrilliantISP:
             
             # Try different loading methods based on file size and bit depth
             if bit_depth > 8:
-                # For high bit depth, try HDR methods first
-                if abs(file_size - expected_size_3byte) < expected_size_3byte * 0.1:  # Within 10%
-                        self.logger.info(f"Trying 3-byte HDR method ({byte_order} endian)...")
-                        self.raw = read_hdr_3byte(raw_path, width, height, byte_order)
-                        if self.raw is not None:
-                            self.logger.info(f"Successfully loaded using 3-byte HDR method ({byte_order} endian)")
-                            return
-                
-                if abs(file_size - expected_size_uint16) < expected_size_uint16 * 0.1:  # Within 10%
+                if abs(file_size - expected_size_3byte) < expected_size_3byte * 0.1:
+                    self.logger.info(f"Trying 3-byte HDR method ({byte_order} endian)...")
+                    self.raw = read_hdr_3byte(raw_path, width, height, byte_order)
+                    if self.raw is None:
+                        raise RuntimeError(
+                            f"Raw file too small for 3-byte HDR: expected {expected_size_3byte} bytes, "
+                            f"got {file_size}"
+                        )
+                    self.logger.info(f"Successfully loaded using 3-byte HDR method ({byte_order} endian)")
+                    return
+
+                if abs(file_size - expected_size_uint16) < expected_size_uint16 * 0.1:
                     self.logger.info(f"Trying uint16 HDR method ({byte_order} endian)...")
                     self.raw = read_hdr_uint16(raw_path, width, height, byte_order)
-                    if self.raw is not None:
-                        self.logger.info(f"Successfully loaded using uint16 HDR method ({byte_order} endian)")
-                        return
-                
-                # Fall back to original method
-                self.logger.info("Falling back to original uint16 method...")
+                    if self.raw is None:
+                        raise RuntimeError(
+                            f"Raw file too small for uint16 HDR: expected {expected_size_uint16} bytes, "
+                            f"got {file_size}"
+                        )
+                    self.logger.info(f"Successfully loaded using uint16 HDR method ({byte_order} endian)")
+                    return
+
+                self.logger.info("Falling back to 2-byte uint16 method...")
+                expected_2byte = width * height * 2
+                if file_size < expected_2byte:
+                    raise RuntimeError(
+                        f"Raw file too small: expected at least {expected_2byte} bytes "
+                        f"(for 2-byte {width}x{height}), got {file_size}"
+                    )
                 self.raw = np.fromfile(raw_path, dtype='>u2').reshape((height, width))
             else:
                 # For 8-bit or lower, use original method
