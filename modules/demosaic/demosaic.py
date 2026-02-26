@@ -93,10 +93,10 @@ class Demosaic:
         else:
             raise ValueError(f"Unknown demosaic algorithm: {algorithm}")
 
-        # Clipping the pixels values within the bit range
-        demos_out = np.clip(demos_out, 0, 2**16 - 1)
-        # demos_out = np.clip(demos_out, 0, 2**self.bit_depth - 1)
-
+        # Pipeline convention: output 16-bit RGB for CCM
+        output_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
+        output_max = 2**output_bit_depth - 1
+        demos_out = np.clip(demos_out, 0, output_max)
         demos_out = np.uint16(demos_out)
         return demos_out
 

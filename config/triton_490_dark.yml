@@ -60,9 +60,17 @@ digital_gain:
   ae_feedback: 0
   is_save: true
 
-lens_shading_correction: 
+lens_shading_correction:
   is_enable: false
   is_save: true
+  r_k1: 0.15
+  r_k2: 0.08
+  gr_k1: 0.12
+  gr_k2: 0.06
+  gb_k1: 0.12
+  gb_k2: 0.06
+  b_k1: 0.15
+  b_k2: 0.08
 
 bayer_noise_reduction:
   is_enable: true
@@ -101,6 +109,8 @@ color_correction_matrix:
 gamma_correction:
   is_enable: true
   is_save: true
+  curve: 'gamma'
+  gamma: 2.2
 
 auto_exposure:
   is_enable: false
@@ -178,16 +188,4 @@ tone_mapping:
   is_enable: true
   tone_mapping_before_demosaic: yes
   tone_mapper: 'durand'
-  #tone_mapper: 'reinhardPTRGlobal'
-  #tone_mapper: 'TMOz'
-  #tone_mapper: 'reinhdard_PTRLocal'
   is_save: false
-  
-TMOz_sorround_cond:
-   XYZw1: [95.047, 100.0, 108.883]   # D65 white point for HDR image
-   Lw1: 10000                         # HDR luminance
-   Yb: 20                            # Background luminance
-   XYZw2: [95.047, 100.0, 108.883]   # Display white point
-   Lw2: 500                         # Output luminance
-   surround: "avg"                   # Surround method
-

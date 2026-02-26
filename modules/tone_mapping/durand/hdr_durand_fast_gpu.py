@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
 from util.utils import save_output_array
@@ -55,10 +56,11 @@ class HDRDurandToneMappingGPU:
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((sensor_info.get("height", 1000), sensor_info.get("width", 1000)), 'bilateral_filter'))
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using GPU acceleration for HDR Tone Mapping")
+            self._log.info("  Using GPU acceleration for HDR Tone Mapping")
         else:
-            print("  Using CPU implementation for HDR Tone Mapping")
+            self._log.info("  Using CPU implementation for HDR Tone Mapping")
     
     def normalize(self, image):
         """ Normalize image to [0,1] range."""
@@ -82,7 +84,7 @@ class HDRDurandToneMappingGPU:
             small_filtered = self.bilateral_filter_gpu(small_img, self.sigma_color, self.sigma_space)
             return zoom(small_filtered, self.downsample_factor, order=1)
         except Exception as e:
-            print(f"  GPU bilateral filter failed, falling back to CPU: {e}")
+            self._log.warning(f"  GPU bilateral filter failed, falling back to CPU: {e}")
             return self.fast_bilateral_filter_cpu(image)
     
     def fast_bilateral_filter_cpu(self, image):
@@ -117,7 +119,7 @@ class HDRDurandToneMappingGPU:
             try:
                 return gpu_bilateral_filter(image, 15, sigma_color * 100, sigma_space, use_gpu=True)
             except Exception as e2:
-                print(f"  GPU bilateral filter failed, falling back to CPU: {e2}")
+                self._log.warning(f"  GPU bilateral filter failed, falling back to CPU: {e2}")
                 return self.bilateral_filter_cpu(image, sigma_color, sigma_space)
     
     def bilateral_filter_cpu(self, image, sigma_color, sigma_space):
@@ -143,7 +145,7 @@ class HDRDurandToneMappingGPU:
                                                self.sigma_color, 
                                                self.sigma_space)
             except Exception as e:
-                print(f"  GPU tone mapping failed, falling back to CPU: {e}")
+                self._log.warning(f"  GPU tone mapping failed, falling back to CPU: {e}")
                 log_base = self.bilateral_filter_cpu(log_luminance.astype(np.float32), 
                                                self.sigma_color, 
                                                self.sigma_space)
@@ -184,11 +186,11 @@ class HDRDurandToneMappingGPU:
     
     def execute(self):
         if self.is_enable is True:
-            print("Executing HDR Durand Tone Mapping...")
+            self._log.info("Executing HDR Durand Tone Mapping...")
             start = time.time()
             self.img = self.apply_tone_mapping()
             execution_time = time.time() - start
-            print(f"Execution time: {execution_time:.3f}s")
+            self._log.info(f"Execution time: {execution_time:.3f}s")
             
         self.save()
         return self.img

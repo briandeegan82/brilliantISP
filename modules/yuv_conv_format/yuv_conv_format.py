@@ -86,11 +86,8 @@ class YUVConvFormat:
 
     def execute(self):
         """Execute YUV conversion if enabled."""
-        print(
-            "YUV conversion format "
-            + self.param_yuv["conv_type"]
-            + " = "
-            + str(self.enable)
+        self.logger.info(
+            f"YUV conversion format {self.param_yuv['conv_type']} = {self.enable}"
         )
 
         if self.enable:

@@ -6,7 +6,9 @@ Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
+from util.debug_utils import get_debug_logger
 from scipy.ndimage import maximum_filter, minimum_filter
 from numba import njit, prange
 import time
@@ -17,7 +19,7 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    print("Numba not available, using CPU implementation")
+    logging.getLogger(__name__).info("Numba not available, using CPU implementation")
 
 
 class DynamicDPCNumbaOptimized:
@@ -27,18 +29,19 @@ class DynamicDPCNumbaOptimized:
     and gradient-guided interpolation. Optimized with Numba.
     """
 
-    def __init__(self, img, sensor_info, parm_dpc):
+    def __init__(self, img, sensor_info, parm_dpc, platform=None):
         self.img = img.astype(np.float32)
         self.sensor_info = sensor_info
-        self.bpp = self.sensor_info["bit_depth"]
+        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.threshold = parm_dpc["dp_threshold"]
         self.is_debug = parm_dpc.get("is_debug", False)
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
-        
+        self.logger = get_debug_logger("DeadPixelCorrection", config=platform or {})
+
         if self.use_numba:
-            print("  Using Numba-optimized dead pixel correction (hybrid approach)")
+            self.logger.info("  Using Numba-optimized dead pixel correction (hybrid approach)")
         else:
-            print("  Using CPU dead pixel correction")
+            self.logger.info("  Using CPU dead pixel correction")
 
     def _should_use_numba(self):
         """Determine if Numba optimization should be used based on image size."""
@@ -131,8 +134,8 @@ class DynamicDPCNumbaOptimized:
         dpc_img = dpc_img.astype(dtype)
 
         if self.is_debug:
-            print("   - Number of corrected pixels =", np.count_nonzero(detection_mask))
-            print("   - Threshold =", self.threshold)
+            self.logger.info(f"   - Number of corrected pixels = {np.count_nonzero(detection_mask)}")
+            self.logger.info(f"   - Threshold = {self.threshold}")
 
         if return_mask:
             return dpc_img, detection_mask.astype(np.uint8)
@@ -144,7 +147,7 @@ class DynamicDPCNumbaOptimized:
         """
         # Import the original implementation
         from modules.dead_pixel_correction.dynamic_dpc import DynamicDPC
-        dpc = DynamicDPC(self.img, self.sensor_info, {"dp_threshold": self.threshold, "is_debug": self.is_debug})
+        dpc = DynamicDPC(self.img, self.sensor_info, {"dp_threshold": self.threshold, "is_debug": self.is_debug}, None)
         return dpc.dynamic_dpc()
 
 

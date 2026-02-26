@@ -103,7 +103,7 @@ class RGBConversion:
         """
         Execute RGB Conversion
         """
-        print("RGB Conversion" + " = " + str(self.enable))
+        self.logger.info(f"RGB Conversion = {self.enable}")
         if self.enable:
             start = time.time()
             rgb_out = self.yuv_to_rgb()

@@ -5,7 +5,7 @@ Code / Paper  Reference:
 Author: 10xEngineers
 ------------------------------------------------------------
 """
-
+import logging
 import numpy as np
 from scipy import ndimage
 from tqdm import tqdm
@@ -52,15 +52,16 @@ class NLMOptimized:
         self.platform = platform
         self.is_progress = platform["disable_progress_bar"]
         self.is_leave = platform["leave_pbar_string"]
+        self.logger = logging.getLogger(__name__)
         
         # Check if GPU acceleration should be used
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
         
         if self.use_gpu:
-            print("  Using GPU acceleration for Non-local Means")
+            self.logger.info("  Using GPU acceleration for Non-local Means")
         else:
-            print("  Using CPU implementation for Non-local Means")
+            self.logger.info("  Using CPU implementation for Non-local Means")
 
     def get_weights(self):
         """
@@ -119,7 +120,7 @@ class NLMOptimized:
             return from_umat(gpu_result)
             
         except Exception as e:
-            print(f"  GPU mean filter failed, falling back to CPU: {e}")
+            self.logger.warning(f"  GPU mean filter failed, falling back to CPU: {e}")
             return self.apply_mean_filter_cpu(array, patch_size)
 
     def apply_nlm_optimized(self):
@@ -136,7 +137,7 @@ class NLMOptimized:
         # Patch size should be odd
         if patch_size % 2 == 0:
             patch_size = patch_size + 1
-            print("    -Making patch size odd: ", patch_size)
+            self.logger.info(f"    -Making patch size odd: {patch_size}")
 
         # Extracting Y channel to apply the 2DNR module
         input_image = in_image[:, :, 0]
@@ -298,5 +299,5 @@ class NLMOptimized:
             else:
                 return self.apply_nlm_optimized()
         except Exception as e:
-            print(f"  Vectorized NLM failed, falling back to optimized: {e}")
+            self.logger.warning(f"  Vectorized NLM failed, falling back to optimized: {e}")
             return self.apply_nlm_optimized()

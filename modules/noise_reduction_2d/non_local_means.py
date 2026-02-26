@@ -1,6 +1,6 @@
 """
-File: non_local_,means.py
-Description: Denoise the image usi9ng non local means filter
+File: non_local_means.py
+Description: Denoise the image using non local means filter
 Code / Paper  Reference: https://www.ipol.im/pub/art/2011/bcm_nlm/article.pdf
 Implementation inspired from:
 Fast Open ISP Author: Qiu Jueqin (qiujueqin@gmail.com)
@@ -9,6 +9,7 @@ Author: 10xEngineers
 ------------------------------------------------------------
 """
 import numpy as np
+from util.debug_utils import get_debug_logger
 from tqdm import tqdm
 
 
@@ -24,6 +25,7 @@ class NLM:
         self.platform = platform
         self.is_progress = platform["disable_progress_bar"]
         self.is_leave = platform["leave_pbar_string"]
+        self.logger = get_debug_logger("NoiseReduction2d", config=platform)
 
     def get_weights(self):
         """
@@ -58,7 +60,7 @@ class NLM:
         # Patch size should be odd
         if patch_size % 2 == 0:
             patch_size = patch_size + 1
-            print("    -Making patch size odd: ", patch_size)
+            self.logger.info(f"    -Making patch size odd: {patch_size}")
 
         # Extracting Y channel to apply the 2DNR module
         input_image = in_image[:, :, 0]

@@ -86,7 +86,7 @@ class Scale:
         for i in range(3):
 
             ch_arr = self.img[:, :, i]
-            scale_2d = Scale2D(ch_arr, self.sensor_info, self.parm_sca)
+            scale_2d = Scale2D(ch_arr, self.sensor_info, self.parm_sca, self.platform)
             scaled_ch = scale_2d.execute()
 
             # If input size is invalid, the Scale2D class returns the original image.
@@ -157,10 +157,12 @@ class Scale:
 class Scale2D:
     """Scale 2D image to given size."""
 
-    def __init__(self, single_channel, sensor_info, parm_sca):
+    def __init__(self, single_channel, sensor_info, parm_sca, platform=None):
         self.single_channel = np.float32(single_channel)
         self.sensor_info = sensor_info
         self.parm_sca = parm_sca
+        self.platform = platform or {}
+        self.logger = get_debug_logger("Scale", config=self.platform)
         self.get_scaling_params()
 
     def resize_by_non_int_fact(self, red_fact, method):
@@ -202,9 +204,9 @@ class Scale2D:
                     self.single_channel = bilinear_obj.bilinear_interpolation()
                 else:
                     if self.is_debug and i == 0:
-                        print(
-                            "   - Invalid scale method.\n"
-                            + "   - UpScaling with default Nearest Neighbour method..."
+                        self.logger.info(
+                            "   - Invalid scale method. "
+                            "UpScaling with default Nearest Neighbour method..."
                         )
                     nn_obj = NN(self.single_channel, upscale_to_size)
                     self.single_channel = nn_obj.scale_nearest_neighbor()
@@ -228,9 +230,9 @@ class Scale2D:
                     self.single_channel = bilinear_obj.downscale_by_int_factor()
                 else:
                     if self.is_debug and i == 0:
-                        print(
-                            "   - Invalid scale method.\n"
-                            + "   - DownScaling with default Nearest Neighbour method..."
+                        self.logger.info(
+                            "   - Invalid scale method. "
+                            "DownScaling with default Nearest Neighbour method..."
                         )
                     nn_obj = NN(self.single_channel, downscale_to_size)
                     self.single_channel = nn_obj.downscale_nearest_neighbor()
@@ -257,11 +259,8 @@ class Scale2D:
 
         # check if input size is valid
         if scale_info == [[None, None, None], [None, None, None]]:
-            print(
-                "   - Invalid input size. It must be one of the following:\n"
-                "   - 1920x1080\n"
-                "   - 2592x1536\n"
-                "   - 2592x1944"
+            self.logger.warning(
+                "   - Invalid input size. It must be one of: 1920x1080, 2592x1536, 2592x1944"
             )
             return self.single_channel
 
@@ -281,10 +280,9 @@ class Scale2D:
                 )
 
                 if self.is_debug:
-                    print(
-                        "   - Shape after downscaling by integer factor "
-                        + f"({scale_info[0][0]}, {scale_info[1][0]})",
-                        self.single_channel.shape,
+                    self.logger.info(
+                        f"   - Shape after downscaling by integer factor "
+                        f"({scale_info[0][0]}, {scale_info[1][0]}): {self.single_channel.shape}"
                     )
 
             # step 2: crop
@@ -294,10 +292,9 @@ class Scale2D:
                 )
 
                 if self.is_debug:
-                    print(
-                        "   - Shape after cropping "
-                        + f"({scale_info[0][1]}, {scale_info[1][1]}): ",
-                        self.single_channel.shape,
+                    self.logger.info(
+                        f"   - Shape after cropping "
+                        f"({scale_info[0][1]}, {scale_info[1][1]}): {self.single_channel.shape}"
                     )
             # step 3: Scale with non-int factor
             if bool(scale_info[0][2]) or bool(scale_info[1][2]):
@@ -306,10 +303,9 @@ class Scale2D:
                 )
 
                 if self.is_debug:
-                    print(
-                        "   - Shape after scaling by non-integer factor "
-                        + f"({scale_info[0][2]}, {scale_info[1][2]}): ",
-                        self.single_channel.shape,
+                    self.logger.info(
+                        f"   - Shape after scaling by non-integer factor "
+                        f"({scale_info[0][2]}, {scale_info[1][2]}): {self.single_channel.shape}"
                     )
             return self.single_channel
 
@@ -338,10 +334,7 @@ class Scale2D:
             self.single_channel = self.hardware_indp_scaling()
 
         if self.is_debug:
-            print(
-                "   - Shape of scaled image for a single channel = ",
-                self.single_channel.shape,
-            )
+            self.logger.info(f"   - Shape of scaled image for a single channel = {self.single_channel.shape}")
         return self.single_channel
 
     def hardware_indp_scaling(self):
@@ -362,9 +355,8 @@ class Scale2D:
 
         else:
             if self.is_debug:
-                print(
-                    "   - Invalid scale method."
-                    + "   - Scaling with default Nearest Neighbor method..."
+                self.logger.info(
+                    "   - Invalid scale method. Scaling with default Nearest Neighbor method..."
                 )
 
             nn_obj = NN(self.single_channel, self.new_size)

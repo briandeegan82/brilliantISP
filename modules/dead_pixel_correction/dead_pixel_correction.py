@@ -32,7 +32,8 @@ class DeadPixelCorrection:
         self.parm_dpc = parm_dpc
         self.is_progress = platform["disable_progress_bar"]
         self.is_leave = platform["leave_pbar_string"]
-        self.bpp = self.sensor_info["bit_depth"]
+        # Use hdr_bit_depth for HDR pipelines to avoid truncation
+        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.threshold = self.parm_dpc["dp_threshold"]
         self.is_debug = self.parm_dpc["is_debug"]
         self.is_save = parm_dpc["is_save"]
@@ -50,9 +51,9 @@ class DeadPixelCorrection:
         """Apply DPC with Numba optimization if available"""
         # Use Numba version if available and beneficial
         if NUMBA_AVAILABLE:
-            dpc = DynDPCNumba(self.img, self.sensor_info, self.parm_dpc)
+            dpc = DynDPCNumba(self.img, self.sensor_info, self.parm_dpc, self.platform)
         else:
-            dpc = DynDPC(self.img, self.sensor_info, self.parm_dpc)
+            dpc = DynDPC(self.img, self.sensor_info, self.parm_dpc, self.platform)
         return dpc.dynamic_dpc()
 
     def save(self):

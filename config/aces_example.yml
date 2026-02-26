@@ -1,0 +1,22 @@
+# ACES Tone Mapping Configuration Example
+# Add this section to your config YAML file
+
+hdr_durand:  # This is used for all tone mapping methods (durand, aces, etc.)
+  is_enable: true
+  is_save: false
+  is_debug: false
+  # Durand-specific parameters (ignored for ACES)
+  sigma_space: 2.0
+  sigma_color: 0.4
+  contrast_factor: 2.0
+  downsample_factor: 4
+
+# ACES-specific configuration (when tone_mapper is set to 'aces')
+hdr_aces:
+  is_enable: true
+  is_save: false
+  is_debug: false
+  exposure_adjust: 0.0      # EV adjustment for exposure [-2 to +2]
+  white_point: 7.2          # Display white point in nits
+  surround: "dark"          # Surround: 'dark', 'dim', 'avg'
+  gamma: 2.4                # Display gamma for sRGB correction

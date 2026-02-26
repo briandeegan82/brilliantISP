@@ -1,7 +1,7 @@
 from util.debug_utils import get_debug_logger
 """
 File: color_correction_matrix_optimized.py
-Description: Optimized color correction matrix using vectorized operations
+Description: CCM on linear RGB; expects linear demosaic output.
 Code / Paper  Reference: https://www.imatest.com/docs/colormatrix/
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
@@ -38,10 +38,10 @@ class ColorCorrectionMatrixOptimized:
 
         self.ccm_mat = np.float32([r_1, r_2, r_3])
 
-        # OPTIMIZATION: Use vectorized normalization
-        # normalize nbit to 0-1 img
-        # self.img = np.float32(self.img) / (2**self.output_bit_depth - 1)
-        self.img = np.float32(self.img) / 65535 #(2**16 - 1)
+        # Pipeline convention: demosaic outputs 16-bit RGB
+        input_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
+        input_max = 2**input_bit_depth - 1
+        self.img = np.float32(self.img) / input_max
         # OPTIMIZATION: Use efficient reshape and matrix multiplication
         # convert to nx3 - use reshape with -1 for automatic dimension calculation
         img1 = self.img.reshape(-1, 3)
@@ -56,10 +56,9 @@ class ColorCorrectionMatrixOptimized:
         out = np.clip(out, 0, 1, out=out)  # In-place clipping for efficiency
 
         # OPTIMIZATION: Use efficient reshape and conversion
-        # convert back
+        # Gamma expects 16-bit input
         out = out.reshape(self.img.shape)
-        # out = np.uint16(out * (2**self.output_bit_depth - 1))
-        out = np.uint16(out * 65535) #(2**16 - 1)
+        out = np.uint16(out * input_max)
         return out
 
     def save(self):

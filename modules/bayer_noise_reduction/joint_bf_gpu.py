@@ -6,7 +6,7 @@ https://www.researchgate.net/publication/261753644_Green_Channel_Guiding_Denoisi
 Author: 10xEngineers
 ------------------------------------------------------------
 """
-
+import logging
 import warnings
 import numpy as np
 from scipy import ndimage
@@ -62,10 +62,11 @@ class JointBFGPU:
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using GPU acceleration for Bayer Noise Reduction")
+            self._log.info("  Using GPU acceleration for Bayer Noise Reduction")
         else:
-            print("  Using CPU implementation for Bayer Noise Reduction")
+            self._log.info("  Using CPU implementation for Bayer Noise Reduction")
 
     def gpu_convolve(self, img, kernel, mode="reflect"):
         """
@@ -75,7 +76,7 @@ class JointBFGPU:
             try:
                 return gpu_filter2d(img, kernel, use_gpu=True)
             except Exception as e:
-                print(f"  GPU convolution failed, falling back to CPU: {e}")
+                self._log.warning(f"  GPU convolution failed, falling back to CPU: {e}")
                 return ndimage.convolve(img, kernel, mode=mode)
         else:
             return ndimage.convolve(img, kernel, mode=mode)
@@ -116,7 +117,7 @@ class JointBFGPU:
             return result
             
         except Exception as e:
-            print(f"  GPU bilateral filter failed, falling back to CPU: {e}")
+            self._log.warning(f"  GPU bilateral filter failed, falling back to CPU: {e}")
             return self.fast_joint_bilateral_filter_cpu(img, guide_img, filt_size_s, stddev_s, filt_size_r, stddev_r, ch_type)
 
     def fast_joint_bilateral_filter_cpu(self, img, guide_img, filt_size_s, stddev_s, filt_size_r, stddev_r, ch_type):
@@ -154,7 +155,7 @@ class JointBFGPU:
             return from_umat(gpu_result)
             
         except Exception as e:
-            print(f"  GPU range filter failed, falling back to CPU: {e}")
+            self._log.warning(f"  GPU range filter failed, falling back to CPU: {e}")
             return self.apply_range_filter(spatial_filtered, guide_spatial, filt_size_r, stddev_r, ch_type)
 
     def apply_range_filter(self, spatial_filtered, guide_spatial, filt_size_r, stddev_r, ch_type):
@@ -193,7 +194,7 @@ class JointBFGPU:
         in_img = self.img
         bayer_pattern = self.sensor_info["bayer_pattern"]
         width, height = self.sensor_info["width"], self.sensor_info["height"]
-        bit_depth = self.sensor_info["hdr_bit_depth"]
+        bit_depth = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
 
         # Extract BNR parameters
         filt_size = self.parm_bnr["filter_window"]
@@ -333,8 +334,7 @@ class JointBFGPU:
             bnr_out_img[1:height:2, 0:width:2] = out_img_r
             bnr_out_img[0:height:2, 1:width:2] = out_img_b
 
-        # Convert back to original bit depth
+        # Convert back to original bit depth (uint32 for HDR compatibility)
         bnr_out_img = bnr_out_img * (2**bit_depth - 1)
         bnr_out_img = np.clip(bnr_out_img, 0, 2**bit_depth - 1)
-
-        return bnr_out_img.astype(np.uint16)
+        return bnr_out_img.astype(np.uint32)

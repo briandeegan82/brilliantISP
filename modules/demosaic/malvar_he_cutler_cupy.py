@@ -5,6 +5,7 @@ Code / Paper  Reference: https://www.ipol.im/pub/art/2011/g_mhcd/article.pdf
 Author: 10xEngineers
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
 from scipy.signal import correlate2d
 
@@ -14,7 +15,7 @@ try:
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
-    print("CuPy not available, using CPU implementation")
+    logging.getLogger(__name__).info("CuPy not available, using CPU implementation")
 
 
 class MalvarCuPy:
@@ -27,10 +28,11 @@ class MalvarCuPy:
         self.masks = masks
         self.use_gpu = CUPY_AVAILABLE and self._should_use_gpu()
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using CuPy-accelerated Malvar-He-Cutler demosaicing")
+            self._log.info("  Using CuPy-accelerated Malvar-He-Cutler demosaicing")
         else:
-            print("  Using CPU Malvar-He-Cutler demosaicing")
+            self._log.info("  Using CPU Malvar-He-Cutler demosaicing")
 
     def _should_use_gpu(self):
         """Determine if GPU acceleration should be used based on image size."""
@@ -264,7 +266,7 @@ class MalvarCuPy:
             return cp.asnumpy(demos_out_gpu)
 
         except Exception as e:
-            print(f"  GPU processing failed: {e}, falling back to CPU")
+            self._log.warning(f"  GPU processing failed: {e}, falling back to CPU")
             return self.apply_malvar_cpu()
 
     def apply_malvar(self):

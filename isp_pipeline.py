@@ -10,7 +10,7 @@ from brilliant_isp import BrilliantISP
 
 CONFIG_PATH = "./config/svs_cam.yml"
 RAW_DATA = "./in_frames/hdr_mode/"
-FILENAME = 'frame_0000.raw'
+FILENAME = 'frame_0111.raw'
 
 
 

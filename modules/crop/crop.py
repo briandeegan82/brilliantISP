@@ -10,6 +10,7 @@ import time
 import re
 import numpy as np
 from util.utils import save_output_array
+from util.debug_utils import get_debug_logger
 
 
 class Crop:
@@ -35,6 +36,7 @@ class Crop:
 
         self.update_sensor_info(sensor_info)
         self.platform = platform
+        self.logger = get_debug_logger("Crop", config=self.platform)
 
     def update_sensor_info(self, dictionary):
         """This function updates the variable stored in the dictionary sensor info."""
@@ -68,21 +70,21 @@ class Crop:
                     cols_to_crop // 2 : -cols_to_crop // 2,
                 ]
             else:
-                print(
-                    "   - Input/Output heights are not compatible."
-                    " Bayer pattern will be disturbed if cropped!"
+                self.logger.warning(
+                    "   - Input/Output heights are not compatible. "
+                    "Bayer pattern will be disturbed if cropped!"
                 )
         return img
 
     def apply_cropping(self):
         """Crop Image"""
         if self.old_size == self.new_size:
-            print("   - Output size is the same as input size.")
+            self.logger.info("   - Output size is the same as input size.")
             return self.img
 
         if self.old_size[0] < self.new_size[0] or self.old_size[1] < self.new_size[1]:
-            print(f"   - Invalid output size {self.new_size[0]}x{self.new_size[1]}")
-            print("   - Make sure output size is smaller than input size!")
+            self.logger.warning(f"   - Invalid output size {self.new_size[0]}x{self.new_size[1]}")
+            self.logger.warning("   - Make sure output size is smaller than input size!")
             return self.img
 
         crop_rows = self.old_size[0] - self.new_size[0]
@@ -94,9 +96,9 @@ class Crop:
         cropped_img = self.crop(self.img, crop_rows, crop_cols)
 
         if self.is_debug:
-            print("   - Number of rows cropped = ", crop_rows)
-            print("   - Number of columns cropped = ", crop_cols)
-            print("   - Shape of cropped image = ", cropped_img.shape)
+            self.logger.info(f"   - Number of rows cropped = {crop_rows}")
+            self.logger.info(f"   - Number of columns cropped = {crop_cols}")
+            self.logger.info(f"   - Shape of cropped image = {cropped_img.shape}")
         return cropped_img
 
     def save(self, filename_tag):
@@ -121,7 +123,7 @@ class Crop:
 
     def execute(self):
         """Execute cropping if enabled."""
-        print("Crop = " + str(self.enable))
+        self.logger.info(f"Crop = {self.enable}")
 
         # Save the input of crop module
         self.save("Inpipeline_crop_")
@@ -130,7 +132,7 @@ class Crop:
         if self.enable:
             start = time.time()
             cropped_img = self.apply_cropping()
-            print(f"  Execution time: {time.time() - start:.3f}s")
+            self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = cropped_img
 
         # save the output of crop module

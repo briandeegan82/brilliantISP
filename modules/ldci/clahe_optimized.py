@@ -5,7 +5,7 @@ Code / Paper  Reference:
 Author: 10xEngineers
 ------------------------------------------------------------
 """
-
+import logging
 import math
 import numpy as np
 import cv2
@@ -57,11 +57,11 @@ class CLAHEOptimized:
         # Check if GPU acceleration should be used
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((yuv.shape[0], yuv.shape[1]), 'filter2d'))
-        
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using GPU acceleration for CLAHE")
+            self._log.info("  Using GPU acceleration for CLAHE")
         else:
-            print("  Using CPU implementation for CLAHE")
+            self._log.info("  Using CPU implementation for CLAHE")
 
     def pad_array(self, array, pads, mode="reflect"):
         """
@@ -345,7 +345,7 @@ class CLAHEOptimized:
                 # GPU acceleration could be added for specific operations
                 return self.apply_clahe_optimized()
             except Exception as e:
-                print(f"  GPU CLAHE failed, falling back to CPU: {e}")
+                self._log.warning(f"  GPU CLAHE failed, falling back to CPU: {e}")
                 return self.apply_clahe_optimized()
         else:
             return self.apply_clahe_optimized()

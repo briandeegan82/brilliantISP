@@ -1,3 +1,7 @@
+"""
+Decompanding (PWC): Converts companded sensor data to linear scene-referred.
+Output is linear; all downstream modules assume linear input until gamma.
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 import time

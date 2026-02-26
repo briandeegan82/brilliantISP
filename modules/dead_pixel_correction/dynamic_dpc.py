@@ -1,6 +1,6 @@
 """
-File: dead_pixel_correction.py
-Description: Corrects the hot or dead pixels
+File: dynamic_dpc.py
+Description: Dynamic dead pixel correction implementation
 Code / Paper  Reference: https://ieeexplore.ieee.org/document/9194921
 Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: 10xEngineers Pvt Ltd
@@ -8,6 +8,7 @@ Author: 10xEngineers Pvt Ltd
 """
 
 import numpy as np
+from util.debug_utils import get_debug_logger
 from scipy.ndimage import maximum_filter, minimum_filter, correlate
 
 
@@ -17,12 +18,13 @@ class DynamicDPC:
     dead pixels and apply correction using the neighboring pixels.
     """
 
-    def __init__(self, img, sensor_info, parm_dpc):
+    def __init__(self, img, sensor_info, parm_dpc, platform=None):
         self.img = img
         self.sensor_info = sensor_info
-        self.bpp = self.sensor_info["bit_depth"]
+        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.threshold = parm_dpc["dp_threshold"]
         self.is_debug = parm_dpc["is_debug"]
+        self.logger = get_debug_logger("DeadPixelCorrection", config=platform or {})
 
     def dynamic_dpc(self):
         """This function detects and corrects Dead pixels using numpy
@@ -306,13 +308,12 @@ class DynamicDPC:
         # Insert correct value of the detected dead pixels
         dpc_img = np.where(detection_mask, corrected_img, self.img)
 
-        # Remove padding
-        self.img = np.uint16(np.clip(dpc_img, 0, (2**self.bpp) - 1))
+        # Remove padding, use uint32 for HDR (bpp > 16)
+        max_val = (2**self.bpp) - 1
+        self.img = np.clip(dpc_img, 0, max_val)
+        self.img = self.img.astype(np.uint32 if self.bpp > 16 else np.uint16)
 
         if self.is_debug:
-            print(
-                "   - Number of corrected pixels = ",
-                np.count_nonzero(detection_mask),
-            )
-            print("   - Threshold = ", self.threshold)
+            self.logger.info(f"   - Number of corrected pixels = {np.count_nonzero(detection_mask)}")
+            self.logger.info(f"   - Threshold = {self.threshold}")
         return self.img

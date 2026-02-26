@@ -2,13 +2,15 @@
 This script is used to run isp_pipeline.py on a dataset placed in ./inframes/normal/data
 It also fetches if a separate config of a raw image is present othewise uses the default config
 """
-
+import logging
 import os
 from pathlib import Path
 from tqdm import tqdm
 from brilliant_isp import BrilliantISP
 
 from util.config_utils import parse_file_name, extract_raw_metadata
+
+_log = logging.getLogger(__name__)
 
 # Define multiple input/output folder pairs
 DATASET_CONFIGS = [
@@ -63,9 +65,9 @@ def video_processing(input_path, output_path):
     raw_files = [f_name for f_name in os.listdir(input_path) if ".raw" in f_name]
     raw_files.sort()
 
-    print(f"Processing {len(raw_files)} video frames...")
-    print(f"Input directory: {input_path}")
-    print(f"Output directory: {output_path}")
+    _log.info(f"Processing {len(raw_files)} video frames...")
+    _log.info(f"Input directory: {input_path}")
+    _log.info(f"Output directory: {output_path}")
 
     brilliant_isp = BrilliantISP(DATASET_PATH, CONFIG_PATH, OUTPUT_PATH)
 
@@ -105,9 +107,9 @@ def dataset_processing(input_path, output_path):
     # set generate_tv flag to false
     brilliant_isp.c_yaml["platform"]["generate_tv"] = False
 
-    print(f"Processing {len(raw_images)} dataset images...")
-    print(f"Input directory: {input_path}")
-    print(f"Output directory: {output_path}")
+    _log.info(f"Processing {len(raw_images)} dataset images...")
+    _log.info(f"Input directory: {input_path}")
+    _log.info(f"Output directory: {output_path}")
 
     is_default_config = True
 
@@ -119,7 +121,7 @@ def dataset_processing(input_path, output_path):
         # check if the config file exists in the input_path
         if find_files(config_file, input_path):
 
-            print(f"Found {config_file}.")
+            _log.info(f"Found {config_file}.")
 
             # use raw config file in dataset
             brilliant_isp.load_config(DATASET_PATH + config_file)
@@ -127,7 +129,7 @@ def dataset_processing(input_path, output_path):
             brilliant_isp.execute()
 
         else:
-            print(f"Not Found {config_file}, Changing filename in default config file.")
+            _log.info(f"Not Found {config_file}, Changing filename in default config file.")
 
             # copy default config file
             if not is_default_config:
@@ -136,23 +138,23 @@ def dataset_processing(input_path, output_path):
 
             if EXTRACT_SENSOR_INFO:
                 if raw_path_object.suffix == ".raw":
-                    print(
+                    _log.info(
                         raw_path_object.suffix
                         + " file, sensor_info will be extracted from filename."
                     )
                     sensor_info = parse_file_name(raw)
                     if sensor_info:
                         brilliant_isp.update_sensor_info(sensor_info)
-                        print("updated sensor_info into config")
+                        _log.info("updated sensor_info into config")
                     else:
-                        print("No information in filename - sensor_info not updated")
+                        _log.info("No information in filename - sensor_info not updated")
                 else:
                     sensor_info = extract_raw_metadata(input_path + raw)
                     if sensor_info:
                         brilliant_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
-                        print("updated sensor_info into config")
+                        _log.info("updated sensor_info into config")
                     else:
-                        print(
+                        _log.info(
                             "Not compatible file for metadata - sensor_info not updated"
                         )
 
@@ -173,7 +175,7 @@ def process_multiple_folders():
     """
     Process multiple input folders with corresponding output folders
     """
-    print(f"Processing {len(DATASET_CONFIGS)} folder pairs...")
+    _log.info(f"Processing {len(DATASET_CONFIGS)} folder pairs...")
     
     for i, config in enumerate(DATASET_CONFIGS, 1):
         input_path = config["input_path"]
@@ -182,26 +184,26 @@ def process_multiple_folders():
         # Create output directory if it doesn't exist
         os.makedirs(output_path, exist_ok=True)
         
-        print(f"\n{'='*60}")
-        print(f"Processing folder pair {i}/{len(DATASET_CONFIGS)}")
-        print(f"Input: {input_path}")
-        print(f"Output: {output_path}")
-        print(f"{'='*60}")
+        _log.info(f"\n{'='*60}")
+        _log.info(f"Processing folder pair {i}/{len(DATASET_CONFIGS)}")
+        _log.info(f"Input: {input_path}")
+        _log.info(f"Output: {output_path}")
+        _log.info(f"{'='*60}")
         
         if VIDEO_MODE:
             video_processing(input_path, output_path)
         else:
             dataset_processing(input_path, output_path)
         
-        print(f"Completed processing folder pair {i}/{len(DATASET_CONFIGS)}")
+        _log.info(f"Completed processing folder pair {i}/{len(DATASET_CONFIGS)}")
 
 
 if __name__ == "__main__":
-
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     if VIDEO_MODE:
-        print("PROCESSING VIDEO FRAMES ONE BY ONE IN SEQUENCE")
+        _log.info("PROCESSING VIDEO FRAMES ONE BY ONE IN SEQUENCE")
         process_multiple_folders()
 
     else:
-        print("PROCESSING DATSET IMAGES ONE BY ONE")
+        _log.info("PROCESSING DATSET IMAGES ONE BY ONE")
         process_multiple_folders()

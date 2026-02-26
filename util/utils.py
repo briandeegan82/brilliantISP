@@ -5,6 +5,7 @@ Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
 
+import logging
 import os
 from datetime import datetime
 import random
@@ -155,27 +156,25 @@ def stride_convolve2d(matrix, kernel):
     ]
 
 
-def display_ae_statistics(ae_feedback, awb_gains):
+def display_ae_statistics(ae_feedback, awb_gains, logger=None):
     """
-    Print AE Stats for current frame
+    Log AE Stats for current frame
     """
-    # Logs for AWB
+    log = logger or logging.getLogger("BrilliantISP.3A")
     if awb_gains is None:
-        print("   - 3A Stats    - AWB is Disable")
+        log.info("   - 3A Stats    - AWB is Disable")
     else:
-        print("   - 3A Stats    - AWB Rgain = ", awb_gains[0])
-        print("   - 3A Stats    - AWB Bgain = ", awb_gains[1])
-
-    # Logs for AE
+        log.info(f"   - 3A Stats    - AWB Rgain = {awb_gains[0]}")
+        log.info(f"   - 3A Stats    - AWB Bgain = {awb_gains[1]}")
     if ae_feedback is None:
-        print("   - 3A Stats    - AE is Disable")
+        log.info("   - 3A Stats    - AE is Disable")
     else:
         if ae_feedback < 0:
-            print("   - 3A Stats    - AE Feedback = Underexposed")
+            log.info("   - 3A Stats    - AE Feedback = Underexposed")
         elif ae_feedback > 0:
-            print("   - 3A Stats    - AE Feedback = Overexposed")
+            log.info("   - 3A Stats    - AE Feedback = Overexposed")
         else:
-            print("   - 3A Stats    - AE Feedback = Correct Exposure")
+            log.info("   - 3A Stats    - AE Feedback = Correct Exposure")
 
 
 def reconstruct_yuv_from_422_custom(yuv_422_custom, width, height):

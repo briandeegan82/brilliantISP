@@ -15,6 +15,7 @@ sensor_info:
   #range: 65536
   hdr_bit_depth: 24
   bit_depth: 12
+  pipeline_rgb_bit_depth: 16  # RGB stages (demosaic→gamma); see docs/PIPELINE_BIT_DEPTH_SPEC.md
   width: 1920
   height: 1536
   output_bit_depth: 8
@@ -85,9 +86,19 @@ digital_gain:
   ae_feedback: 0
   is_save: false
 
-lens_shading_correction: 
-  is_enable: false
+lens_shading_correction:
+  is_enable: true
   is_save: false
+  # Radial polynomial: gain(r) = 1 + k1*r² + k2*r⁴; r=0 at center, 1 at corners
+  # Increase k1/k2 to correct stronger vignetting (typical: k1 0.1-0.4, k2 0.05-0.2)
+  r_k1: 0.15
+  r_k2: 0.08
+  gr_k1: 0.12
+  gr_k2: 0.06
+  gb_k1: 0.12
+  gb_k2: 0.06
+  b_k1: 0.15
+  b_k2: 0.08
 
 bayer_noise_reduction:
   is_enable: true
@@ -140,23 +151,14 @@ color_correction_matrix:
 gamma_correction:
   is_enable: true
   is_save: false
+  curve: 'srgb'   # 'gamma' (power) or 'srgb'
+  gamma: 2.2       # Used when curve='gamma'
 
 auto_exposure:
   is_enable: true
   is_debug: false
   center_illuminance: 4095
   histogram_skewness: 0.9
-
-# Example usage in ISP pipeline
-hdr_durand:
-  is_enable: true
-  is_save: false
-  is_debug: false
-  sigma_space: 8.0
-  sigma_color: 8.0
-  contrast_factor: 1.5
-  downsample_factor: 4
-
 
 color_space_conversion: 
   conv_standard: 2
@@ -210,23 +212,67 @@ yuv_conversion_format:
   conv_type: '444'
   is_save: false
   
-     #Imran Modifications 
+# tone_mapper -> config section: durand->hdr_durand, aces->aces, integer->integer_tmo,
+# aces_integer->aces_integer, hable->hable, hable_integer->hable_integer
 tone_mapping:
-  # The conversion wont run if csc is false
   is_enable: true
   tone_mapping_before_demosaic: yes
-  tone_mapper: 'durand'
-  #tone_mapper: 'reinhardPTRGlobal'
-  #tone_mapper: 'TMOz'
-  #tone_mapper: 'reinhdard_PTRLocal'
+  #tone_mapper: 'durand'        # Float, local (bilateral)
+  #tone_mapper: 'aces'          # Float, filmic
+  #tone_mapper: 'integer'       # Integer rational curve
+  #tone_mapper: 'aces_integer'  # Integer ACES via LUT
+  #tone_mapper: 'hable'         # Float Hable/Uncharted 2 filmic
+  tone_mapper: 'hable_integer'  # Integer Hable filmic (LUT) - production-style
   is_save: false
+
+# Integer-native tone mapping (production-style)
+integer_tmo:
+  is_enable: true
+  knee: 0.25      # White point; larger = more compression
+  strength: 1.0   # Curve strength
+
+# ACES integer/LUT tone mapping (production-style)
+aces_integer:
+  is_enable: true
+  exposure_adjustment: 0.0  # EV
+  gamma: 2.4
+  apply_odt_gamma: true
+  use_normalization: true   # Per-image min-max (matches float ACES, fixes washout)
+  hdr_scale: 1.0           # Lower = more compression; 1.0 = conservative
+
+# Durand: float, local TMO (used when tone_mapper: 'durand')
+hdr_durand:
+  is_enable: true
+  is_save: false
+  is_debug: false
+  sigma_space: 8.0
+  sigma_color: 8.0
+  contrast_factor: 1.5
+  downsample_factor: 4
   
-TMOz_sorround_cond:
-   XYZw1: [95.047, 100.0, 108.883]   # D65 white point for HDR image
-   Lw1: 10000                         # HDR luminance
-   Yb: 20                            # Background luminance
-   XYZw2: [95.047, 100.0, 108.883]   # Display white point
-   Lw2: 500                         # Output luminance
-   surround: "avg"                   # Surround method
+# Hable (Uncharted 2) filmic tone mapping (float)
+hable:
+  is_enable: true
+  is_save: false
+  exposure_bias: 2.0    # Exposure adjustment (higher = brighter)
+  white_point: 11.2     # White point (Hable default)
 
+# Hable integer/LUT tone mapping (production-style)
+hable_integer:
+  is_enable: true
+  exposure_bias: 4.0
+  white_point: 11.2
+  use_normalization: true
+  hdr_scale: 2.0       # Lower = more compression
 
+# ACES Tone Mapping Configuration
+aces:
+  is_enable: true
+  is_save: false
+  is_debug: false
+  # ACES variant: 'fitted' (faster, default) or 'full' (more accurate)
+  variant: 'fitted'
+  # Exposure adjustment in stops (0 = no adjustment)
+  exposure_adjustment: 0.0
+  # Output transform: 'sRGB' or 'Rec709'
+  output_transform: 'sRGB'

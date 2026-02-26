@@ -1,28 +1,38 @@
-# HDR-ISP
-This project is based on infiniteISP by 10X Engineering, which in turn is based on FastOpenISP and OpenISP. Really standing on the shoulders of giants here.
+# BrilliantISP / HDR-ISP
 
-## Modifications
-The main modifications compared to infiniteISP are:
-- Added a decompanding function to linearize companded data
-- Tone Mapping module is added
-    - Tone mapping can be applied before or after demosaicing
-    - Durand's TMO, Reinhard's global and local TMO ([Photographic Tone Reproduction operators](https://jamesferwerda.com/wp-content/uploads/2015/06/j10_reinhard02_sig.pdf)) and [TMOz](https://github.com/imrankanjoo/TMOz)
-- Modified the bit depth of the ISP pipeline
-- updated debug logging
-- optimized execution time (ongoing)
-- added extra processing options
+This project is based on infiniteISP by 10xEngineers, which in turn is based on FastOpenISP and OpenISP. Standing on the shoulders of giants.
 
-As of now, this is very much a work in progress. Features to be added include, but are not limited to:
-- HDR multicapture merge
-- Lens shading correction
-- Code optimizations
+## Features
+
+- **Decompanding (PWC)**: Linearizes companded sensor data for HDR pipelines
+- **Tone mapping** (before or after demosaic):
+  - `durand` – Durand bilateral-filter local TMO
+  - `aces` – ACES filmic (float)
+  - `aces_integer` – ACES via LUT (production-style)
+  - `hable` / `hable_integer` – Hable/Uncharted 2 filmic
+  - `integer` – Rational curve (Reinhard-style)
+- **Lens shading correction**: Radial polynomial per-channel vignetting correction
+- **Gamma correction**: Power curve or sRGB OETF (IEC 61966-2-1)
+- Config-driven pipeline; HDR-aware bit depths
+- Optional GPU acceleration (BNR, Durand TMO, scale, sharpen)
 
 ## Instructions
-To run, execute the file "isp_pipeline.py"
 
-The ISP parameters are defined in the config .yml files 
+Run the pipeline:
 
-### more to follow
+```bash
+python isp_pipeline.py
+```
+
+Parameters are defined in config YAML files (e.g. `config/svs_cam.yml`). Set `CONFIG_PATH` and `RAW_DATA` in `isp_pipeline.py` for your setup.
+
+## Configuration
+
+See `config/svs_cam.yml` for a full example. Key sections:
+
+- `tone_mapping` – `tone_mapper`: durand, aces, aces_integer, hable, hable_integer
+- `gamma_correction` – `curve`: gamma or srgb
+- `lens_shading_correction` – radial k1/k2 per channel
 
 
 
@@ -31,7 +41,7 @@ The ISP parameters are defined in the config .yml files
 - This project is a continuation of the work by cruxopen, fast-openISP, and infiniteISP, to name but a few.
 
 ## List of Open Source ISPs
-- [infiniteISP] (https://github.com/10x-Engineers/Infinite-ISP/tree/main)
+- [infiniteISP](https://github.com/10x-Engineers/Infinite-ISP/tree/main)
 - [openISP](https://github.com/cruxopen/openISP.git)
 - [Fast Open Image Signal Processor](https://github.com/QiuJueqin/fast-openISP.git)
 - [AbdoKamel - simple-camera-pipeline](https://github.com/AbdoKamel/simple-camera-pipeline.git)

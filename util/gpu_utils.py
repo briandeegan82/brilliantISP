@@ -3,6 +3,7 @@ GPU acceleration utilities for OpenCV operations using UMat and direct CUDA.
 Provides helper functions for common image processing operations with GPU acceleration.
 """
 
+import logging
 import cv2
 import numpy as np
 from typing import Optional, Tuple, Union
@@ -90,7 +91,7 @@ def gpu_resize(img: np.ndarray, size: Tuple[int, int],
             gpu_result = cv2.resize(gpu_img, size, interpolation=interpolation)
             return from_umat(gpu_result)
         except Exception as e:
-            print(f"GPU resize failed, falling back to CPU: {e}")
+            logging.getLogger("BrilliantISP.GPU").warning(f"GPU resize failed, falling back to CPU: {e}")
     
     return cv2.resize(img, size, interpolation=interpolation)
 
@@ -124,7 +125,7 @@ def gpu_bilateral_filter(img: np.ndarray, d: int, sigma_color: float,
                 gpu_result = cv2.bilateralFilter(gpu_img, d, sigma_color, sigma_space)
                 return from_umat(gpu_result)
             except Exception as e2:
-                print(f"GPU bilateral filter failed, falling back to CPU: {e2}")
+                logging.getLogger("BrilliantISP.GPU").warning(f"GPU bilateral filter failed, falling back to CPU: {e2}")
     
     return cv2.bilateralFilter(img, d, sigma_color, sigma_space)
 
@@ -148,7 +149,7 @@ def gpu_filter2d(img: np.ndarray, kernel: np.ndarray,
             gpu_result = cv2.filter2D(gpu_img, -1, gpu_kernel)
             return from_umat(gpu_result)
         except Exception as e:
-            print(f"GPU filter2D failed, falling back to CPU: {e}")
+            logging.getLogger("BrilliantISP.GPU").warning(f"GPU filter2D failed, falling back to CPU: {e}")
     
     return cv2.filter2D(img, -1, kernel)
 
@@ -176,7 +177,7 @@ def gpu_gaussian_blur(img: np.ndarray, ksize: Tuple[int, int],
             gpu_result = cv2.GaussianBlur(gpu_img, ksize, sigma_x, sigma_y)
             return from_umat(gpu_result)
         except Exception as e:
-            print(f"GPU Gaussian blur failed, falling back to CPU: {e}")
+            logging.getLogger("BrilliantISP.GPU").warning(f"GPU Gaussian blur failed, falling back to CPU: {e}")
     
     return cv2.GaussianBlur(img, ksize, sigma_x, sigma_y)
 
@@ -232,7 +233,7 @@ def gpu_pipeline_optimized(operations: list, img: np.ndarray, use_gpu: bool = Tr
         return from_umat(gpu_img)
         
     except Exception as e:
-        print(f"GPU pipeline failed, falling back to CPU: {e}")
+        logging.getLogger("BrilliantISP.GPU").warning(f"GPU pipeline failed, falling back to CPU: {e}")
         # CPU fallback
         result = img
         for func, args, kwargs in operations:

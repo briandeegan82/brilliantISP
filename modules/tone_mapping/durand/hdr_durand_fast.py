@@ -6,7 +6,7 @@ import time
 from util.debug_utils import get_debug_logger
 # Try to import GPU-accelerated version
 try:
-    from modules.hdr_durand.hdr_durand_fast_gpu import HDRDurandToneMappingGPU
+    from modules.tone_mapping.durand.hdr_durand_fast_gpu import HDRDurandToneMappingGPU
     GPU_VERSION_AVAILABLE = True
 except ImportError:
     GPU_VERSION_AVAILABLE = False

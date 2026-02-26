@@ -6,7 +6,7 @@ https://www.researchgate.net/publication/261753644_Green_Channel_Guiding_Denoisi
 Author: 10xEngineers
 ------------------------------------------------------------
 """
-
+import logging
 import warnings
 import numpy as np
 from scipy import ndimage
@@ -62,10 +62,11 @@ class JointBFOptimized:
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using GPU acceleration for Bayer Noise Reduction")
+            self._log.info("  Using GPU acceleration for Bayer Noise Reduction")
         else:
-            print("  Using CPU implementation for Bayer Noise Reduction")
+            self._log.info("  Using CPU implementation for Bayer Noise Reduction")
 
     def optimized_joint_bilateral_filter(self, in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride):
         """
@@ -166,7 +167,7 @@ class JointBFOptimized:
             return result
             
         except Exception as e:
-            print(f"  GPU bilateral filter failed, falling back to CPU: {e}")
+            self._log.warning(f"  GPU bilateral filter failed, falling back to CPU: {e}")
             return self.optimized_joint_bilateral_filter_cpu(in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride)
 
     def apply_range_filter_optimized(self, spatial_filtered, guide_spatial, range_kern, stddev_r):
@@ -221,7 +222,7 @@ class JointBFOptimized:
         in_img = self.img
         bayer_pattern = self.sensor_info["bayer_pattern"]
         width, height = self.sensor_info["width"], self.sensor_info["height"]
-        bit_depth = self.sensor_info["hdr_bit_depth"]
+        bit_depth = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
 
         # Extract BNR parameters
         filt_size = self.parm_bnr["filter_window"]

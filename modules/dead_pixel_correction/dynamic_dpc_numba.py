@@ -6,6 +6,7 @@ Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
 from numba import jit, prange
 import time
@@ -16,7 +17,7 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    print("Numba not available, using CPU implementation")
+    logging.getLogger(__name__).info("Numba not available, using CPU implementation")
 
 
 class DynamicDPCNumba:
@@ -33,10 +34,11 @@ class DynamicDPCNumba:
         self.is_debug = parm_dpc["is_debug"]
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
         
+        self._log = logging.getLogger(__name__)
         if self.use_numba:
-            print("  Using Numba-optimized dead pixel correction")
+            self._log.info("  Using Numba-optimized dead pixel correction")
         else:
-            print("  Using CPU dead pixel correction")
+            self._log.info("  Using CPU dead pixel correction")
 
     def _should_use_numba(self):
         """Determine if Numba optimization should be used based on image size."""
@@ -302,8 +304,8 @@ class DynamicDPCNumba:
         # Debug information
         if self.is_debug:
             num_corrected = np.count_nonzero(detection_mask)
-            print(f"   - Number of corrected pixels = {num_corrected}")
-            print(f"   - Threshold = {self.threshold}")
+            self._log.info(f"   - Number of corrected pixels = {num_corrected}")
+            self._log.info(f"   - Threshold = {self.threshold}")
 
         # Clip to valid range and convert to uint16
         max_val = (2**self.bpp) - 1

@@ -4,6 +4,7 @@ Description: Numba-optimized joint bilateral filter for Bayer noise reduction
 Author: 10xEngineers
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
 from numba import jit, prange
 import time
@@ -14,7 +15,7 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    print("Numba not available, using CPU implementation")
+    logging.getLogger(__name__).info("Numba not available, using CPU implementation")
 
 
 class JointBFNumba:
@@ -29,10 +30,11 @@ class JointBFNumba:
         self.platform = platform
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
         
+        self._log = logging.getLogger(__name__)
         if self.use_numba:
-            print("  Using Numba-optimized joint bilateral filter")
+            self._log.info("  Using Numba-optimized joint bilateral filter")
         else:
-            print("  Using CPU joint bilateral filter")
+            self._log.info("  Using CPU joint bilateral filter")
 
     def _should_use_numba(self):
         """Determine if Numba optimization should be used based on image size."""

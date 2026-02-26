@@ -5,12 +5,15 @@ Code / Paper  Reference:
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
-
+import logging
 import os
 import time
 import yaml
 from pathlib import Path
 from brilliant_isp import BrilliantISP
+
+# Module logger
+_log = logging.getLogger(__name__)
 
 # Configuration
 RAW_DATA = "./in_frames/hdr_mode/"
@@ -122,7 +125,7 @@ def load_and_modify_config(base_config_path, modifications=None):
             if section in config:
                 config[section].update(changes)
             else:
-                print(f"Warning: Section '{section}' not found in config")
+                _log.warning(f"Section '{section}' not found in config")
     
     return config
 
@@ -160,9 +163,9 @@ def process_with_config(config_path, output_suffix=""):
         config_name = Path(config_path).stem
         output_path = os.path.join(OUTPUT_BASE_PATH, config_name)
         
-        print(f"\n{'='*60}")
-        print(f"Processing with config: {config_name}")
-        print(f"{'='*60}")
+        _log.info(f"\n{'='*60}")
+        _log.info(f"Processing with config: {config_name}")
+        _log.info(f"{'='*60}")
         
         # Initialize ISP with the configuration
         brilliant_isp = BrilliantISP(RAW_DATA, config_path, output_path)
@@ -172,23 +175,23 @@ def process_with_config(config_path, output_suffix=""):
         brilliant_isp.execute(img_path=FILENAME, load_method='3byte', byte_order='big')
         end_time = time.time()
         
-        print(f"✓ Successfully processed with {config_name}")
-        print(f"  Processing time: {end_time - start_time:.2f} seconds")
-        print(f"  Output saved to: {output_path}")
+        _log.info(f"Successfully processed with {config_name}")
+        _log.info(f"  Processing time: {end_time - start_time:.2f} seconds")
+        _log.info(f"  Output saved to: {output_path}")
         
         return True
         
     except Exception as e:
-        print(f"✗ Error processing with {config_name}: {str(e)}")
+        _log.error(f"Error processing with {config_name}: {str(e)}")
         return False
 
 def process_multiple_configs():
     """
     Process the image with multiple configurations
     """
-    print(f"Processing image: {FILENAME}")
-    print(f"Available configurations: {len(CONFIG_FILES)}")
-    print(f"Custom configurations: {len(CUSTOM_CONFIGS)}")
+    _log.info(f"Processing image: {FILENAME}")
+    _log.info(f"Available configurations: {len(CONFIG_FILES)}")
+    _log.info(f"Custom configurations: {len(CUSTOM_CONFIGS)}")
     
     # Ensure output directory exists
     os.makedirs(OUTPUT_BASE_PATH, exist_ok=True)
@@ -197,9 +200,9 @@ def process_multiple_configs():
     failed_configs = []
     
     # Process with standard configurations
-    print(f"\n{'='*60}")
-    print("PROCESSING WITH STANDARD CONFIGURATIONS")
-    print(f"{'='*60}")
+    _log.info(f"\n{'='*60}")
+    _log.info("PROCESSING WITH STANDARD CONFIGURATIONS")
+    _log.info(f"{'='*60}")
     
     for config_file in CONFIG_FILES:
         config_path = os.path.join("./config/", config_file)
@@ -211,13 +214,13 @@ def process_multiple_configs():
             else:
                 failed_configs.append(config_file)
         else:
-            print(f"✗ Configuration file not found: {config_path}")
+            _log.error(f"Configuration file not found: {config_path}")
             failed_configs.append(config_file)
     
     # Process with custom configurations
-    print(f"\n{'='*60}")
-    print("PROCESSING WITH CUSTOM CONFIGURATIONS")
-    print(f"{'='*60}")
+    _log.info(f"\n{'='*60}")
+    _log.info("PROCESSING WITH CUSTOM CONFIGURATIONS")
+    _log.info(f"{'='*60}")
     
     temp_configs = []
     
@@ -242,7 +245,7 @@ def process_multiple_configs():
                 failed_configs.append(config_name)
                 
         except Exception as e:
-            print(f"✗ Error creating custom config '{config_name}': {str(e)}")
+            _log.error(f"Error creating custom config '{config_name}': {str(e)}")
             failed_configs.append(config_name)
     
     # Clean up temporary files
@@ -252,25 +255,22 @@ def process_multiple_configs():
         except:
             pass
     
-    # Print summary
-    print(f"\n{'='*60}")
-    print("PROCESSING SUMMARY")
-    print(f"{'='*60}")
-    print(f"Total configurations processed: {len(successful_configs) + len(failed_configs)}")
-    print(f"Successful: {len(successful_configs)}")
-    print(f"Failed: {len(failed_configs)}")
-    
+    # Log summary
+    _log.info(f"\n{'='*60}")
+    _log.info("PROCESSING SUMMARY")
+    _log.info(f"{'='*60}")
+    _log.info(f"Total configurations processed: {len(successful_configs) + len(failed_configs)}")
+    _log.info(f"Successful: {len(successful_configs)}")
+    _log.info(f"Failed: {len(failed_configs)}")
     if successful_configs:
-        print(f"\nSuccessful configurations:")
+        _log.info("Successful configurations:")
         for config in successful_configs:
-            print(f"  ✓ {config}")
-    
+            _log.info(f"  - {config}")
     if failed_configs:
-        print(f"\nFailed configurations:")
+        _log.info("Failed configurations:")
         for config in failed_configs:
-            print(f"  ✗ {config}")
-    
-    print(f"\nOutput directory: {OUTPUT_BASE_PATH}")
+            _log.info(f"  - {config}")
+    _log.info(f"Output directory: {OUTPUT_BASE_PATH}")
 
 def process_specific_configs(config_list):
     """
@@ -279,8 +279,8 @@ def process_specific_configs(config_list):
     Args:
         config_list (list): List of configuration names to process
     """
-    print(f"Processing image: {FILENAME}")
-    print(f"Selected configurations: {config_list}")
+    _log.info(f"Processing image: {FILENAME}")
+    _log.info(f"Selected configurations: {config_list}")
     
     # Ensure output directory exists
     os.makedirs(OUTPUT_BASE_PATH, exist_ok=True)
@@ -305,10 +305,10 @@ def process_specific_configs(config_list):
                 success = process_with_config(temp_config_path, f"_{config_name}")
                 os.remove(temp_config_path)
             except Exception as e:
-                print(f"✗ Error with custom config '{config_name}': {str(e)}")
+                _log.error(f"Error with custom config '{config_name}': {str(e)}")
                 success = False
         else:
-            print(f"✗ Configuration '{config_name}' not found")
+            _log.error(f"Configuration '{config_name}' not found")
             success = False
         
         if success:
@@ -316,17 +316,17 @@ def process_specific_configs(config_list):
         else:
             failed_configs.append(config_name)
     
-    # Print summary
-    print(f"\n{'='*60}")
-    print("PROCESSING SUMMARY")
-    print(f"{'='*60}")
-    print(f"Successful: {len(successful_configs)}")
-    print(f"Failed: {len(failed_configs)}")
-    print(f"Output directory: {OUTPUT_BASE_PATH}")
+    _log.info(f"\n{'='*60}")
+    _log.info("PROCESSING SUMMARY")
+    _log.info(f"{'='*60}")
+    _log.info(f"Successful: {len(successful_configs)}")
+    _log.info(f"Failed: {len(failed_configs)}")
+    _log.info(f"Output directory: {OUTPUT_BASE_PATH}")
 
 if __name__ == "__main__":
     import argparse
-    
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Process image with multiple ISP configurations")
     parser.add_argument("--configs", nargs="+", help="Specific configurations to process")
     parser.add_argument("--image", default=FILENAME, help="Image filename to process")
@@ -339,15 +339,14 @@ if __name__ == "__main__":
         FILENAME = args.image
     
     if args.list:
-        print("Available standard configurations:")
+        logging.basicConfig(level=logging.INFO)
+        _log.info("Available standard configurations:")
         for config in CONFIG_FILES:
-            print(f"  - {Path(config).stem}")
-        
-        print("\nAvailable custom configurations:")
+            _log.info(f"  - {Path(config).stem}")
+        _log.info("Available custom configurations:")
         for config_name in CUSTOM_CONFIGS.keys():
-            print(f"  - {config_name}")
-        
-        print(f"\nCurrent image: {FILENAME}")
+            _log.info(f"  - {config_name}")
+        _log.info(f"Current image: {FILENAME}")
     
     elif args.configs:
         # Process specific configurations

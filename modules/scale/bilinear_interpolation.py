@@ -1,11 +1,12 @@
 """
-File: scale.py
-Description: Implements both hardware friendly and non hardware freindly scaling
+File: bilinear_interpolation.py
+Description: Bilinear interpolation for image scaling
 Code / Paper  Reference:
 https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pdf
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
 import cv2
 from util.utils import stride_convolve2d
@@ -42,7 +43,7 @@ class BilinearInterpolation:
                 scaled_img = gpu_scaled.get()
                 return scaled_img.astype("float32")
             except Exception as e:
-                print(f"GPU acceleration failed, falling back to CPU: {e}")
+                logging.getLogger(__name__).warning(f"GPU acceleration failed, falling back to CPU: {e}")
                 self.use_gpu = False
         
         # CPU version (fallback or when GPU not available)

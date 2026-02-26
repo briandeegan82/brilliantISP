@@ -4,6 +4,7 @@ Description: GPU-accelerated unsharp masking with frequency and strength control
 Code / Paper  Reference:
 Author: 10xEngineers Pvt Ltd
 """
+import logging
 import numpy as np
 from scipy import ndimage
 import cv2
@@ -48,10 +49,11 @@ class UnsharpMaskingGPU:
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((img.shape[0], img.shape[1]), 'gaussian_blur'))
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("    Using GPU acceleration for Unsharp Masking")
+            self._log.info("    Using GPU acceleration for Unsharp Masking")
         else:
-            print("    Using CPU implementation for Unsharp Masking")
+            self._log.info("    Using CPU implementation for Unsharp Masking")
 
     def apply_sharpen(self):
         """
@@ -96,7 +98,7 @@ class UnsharpMaskingGPU:
             return from_umat(gpu_smoothened)
             
         except Exception as e:
-            print(f"    GPU Gaussian blur failed, falling back to CPU: {e}")
+            self._log.warning(f"    GPU Gaussian blur failed, falling back to CPU: {e}")
             return self.apply_gaussian_blur_cpu(luma)
 
     def apply_gaussian_blur_cpu(self, luma):

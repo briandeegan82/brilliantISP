@@ -1,8 +1,7 @@
 from util.debug_utils import get_debug_logger
 """
 File: digital_gain.py
-Description: Applies the digital gain based on config file also interacts with AE
-when adjusting exposure
+Description: Applies digital gain; operates on linear scene-referred data.
 Code / Paper  Reference:
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
@@ -38,8 +37,8 @@ class DigitalGain:
         according to AE Feedback
         """
 
-        # get desired param from config
-        bpp = self.sensor_info["hdr_bit_depth"]
+        # Unified HDR path: use hdr_bit_depth (linear), fallback to bit_depth
+        bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         # dg = self.param_dga['dg_gain']
 
         # converting to float image
@@ -81,7 +80,7 @@ class DigitalGain:
                 self.img,
                 "Out_digital_gain_",
                 self.platform,
-                self.sensor_info["hdr_bit_depth"],
+                self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"]),
                 self.sensor_info["bayer_pattern"],
             )
 

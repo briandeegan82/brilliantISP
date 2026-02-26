@@ -1,7 +1,7 @@
 from util.debug_utils import get_debug_logger
 """
 File: white_balance_optimized.py
-Description: Optimized white balance using vectorized operations
+Description: White balance on linear scene-referred raw (Bayer domain).
 Code / Paper  Reference:
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
@@ -30,7 +30,7 @@ class WhiteBalanceOptimized:
         self.sensor_info = sensor_info
         self.parm_wbc = parm_wbc
         self.bayer = self.sensor_info["bayer_pattern"]
-        self.bpp = self.sensor_info["hdr_bit_depth"]
+        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.raw = None
         self.awb_gains = awb_gains
         # Initialize debug logger
@@ -46,8 +46,8 @@ class WhiteBalanceOptimized:
         self.raw = np.float32(self.img)
 
         if self.is_debug:
-            print("   - WB  - red gain : ", redgain)
-            print("   - WB  - blue gain: ", bluegain)
+            self.logger.info(f"   - WB  - red gain : {redgain}")
+            self.logger.info(f"   - WB  - blue gain: {bluegain}")
 
         # OPTIMIZATION: Use vectorized Bayer pattern application
         # Create gain masks for efficient multiplication
@@ -97,7 +97,7 @@ class WhiteBalanceOptimized:
         Execute White Balance Module
         """
         if self.enable is True:
-            print("White balancing = " + "True")
+            self.logger.info("White balancing = True")
             start = time.time()
             wb_out = self.apply_wb_parameters_optimized()
             execution_time = time.time() - start

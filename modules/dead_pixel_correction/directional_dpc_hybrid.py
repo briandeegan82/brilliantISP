@@ -4,6 +4,7 @@ Description: Hybrid Directional Dead Pixel Correction using NumPy/SciPy operatio
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
+import logging
 import numpy as np
 from scipy.ndimage import median_filter
 import time
@@ -14,7 +15,7 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    print("Numba not available, using CPU implementation")
+    logging.getLogger(__name__).info("Numba not available, using CPU implementation")
 
 
 class DirectionalDPCHybrid:
@@ -30,10 +31,11 @@ class DirectionalDPCHybrid:
         self.is_debug = is_debug
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
         
+        self._log = logging.getLogger(__name__)
         if self.use_numba:
-            print("  Using Hybrid directional DPC with Numba")
+            self._log.info("  Using Hybrid directional DPC with Numba")
         else:
-            print("  Using Hybrid directional DPC (CPU only)")
+            self._log.info("  Using Hybrid directional DPC (CPU only)")
 
     def _should_use_numba(self):
         """Determine if Numba optimization should be used based on image size."""
@@ -65,8 +67,8 @@ class DirectionalDPCHybrid:
         )
 
         if self.is_debug:
-            print("   - Corrected pixels:", np.count_nonzero(detection_mask))
-            print("   - Threshold:", self.threshold)
+            self._log.info(f"   - Corrected pixels: {np.count_nonzero(detection_mask)}")
+            self._log.info(f"   - Threshold: {self.threshold}")
 
         if return_mask:
             return dpc_img, detection_mask.astype(np.uint8)

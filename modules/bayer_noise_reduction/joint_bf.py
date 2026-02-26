@@ -35,7 +35,7 @@ class JointBF:
         in_img = self.img
         bayer_pattern = self.sensor_info["bayer_pattern"]
         width, height = self.sensor_info["width"], self.sensor_info["height"]
-        bit_depth = self.sensor_info["hdr_bit_depth"]
+        bit_depth = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
 
         # extract BNR parameters
         filt_size = self.parm_bnr["filter_window"]

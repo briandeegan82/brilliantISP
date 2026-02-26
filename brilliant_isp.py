@@ -30,9 +30,9 @@ def read_hdr_3byte(file_path, width, height, byte_order='little'):
     actual_size = len(data)
     
     if actual_size < expected_size:
-        # Use debug_print for conditional output
-        from util.debug_utils import debug_print
-        debug_print(f"Warning: File size {actual_size} bytes is smaller than expected {expected_size} bytes")
+        import logging
+        log = logging.getLogger("BrilliantISP.RawLoader")
+        log.warning(f"File size {actual_size} bytes is smaller than expected {expected_size} bytes")
         return None
     
     pixels = []
@@ -75,9 +75,9 @@ def read_hdr_uint16(file_path, width, height, byte_order='little'):
     actual_size = len(data)
     
     if actual_size < expected_size:
-        # Use debug_print for conditional output
-        from util.debug_utils import debug_print
-        debug_print(f"Warning: File size {actual_size} bytes is smaller than expected {expected_size} bytes")
+        import logging
+        log = logging.getLogger("BrilliantISP.RawLoader")
+        log.warning(f"File size {actual_size} bytes is smaller than expected {expected_size} bytes")
         return None
     
     if byte_order == 'little':
@@ -98,21 +98,16 @@ def read_hdr_uint16(file_path, width, height, byte_order='little'):
     
     return image
 
-def analyze_file_size(file_path):
+def analyze_file_size(file_path, logger=None):
     """Analyze file size to suggest possible dimensions"""
+    import logging
+    log = logger or logging.getLogger("BrilliantISP.RawLoader")
     file_size = Path(file_path).stat().st_size
-    # Use debug_print for conditional output
-    from util.debug_utils import debug_print
-    debug_print(f"File size: {file_size:,} bytes")
-    
-    # For 3-byte method
+    log.debug(f"File size: {file_size:,} bytes")
     pixels_3byte = file_size // 3
-    debug_print(f"Pixels (3-byte method): {pixels_3byte:,}")
-    
-    # For uint16 method
+    log.debug(f"Pixels (3-byte method): {pixels_3byte:,}")
     pixels_uint16 = file_size // 4
-    debug_print(f"Pixels (uint16 method): {pixels_uint16:,}")
-    
+    log.debug(f"Pixels (uint16 method): {pixels_uint16:,}")
     return pixels_3byte, pixels_uint16
 
 from modules.crop.crop import Crop
@@ -209,6 +204,7 @@ class BrilliantISP:
             self.parm_ccm = c_yaml["color_correction_matrix"]
             self.parm_gmc = c_yaml["gamma_correction"]
             self.param_durand = c_yaml["hdr_durand"]
+            self.param_aces = c_yaml.get("aces", {})
             self.parm_csc = c_yaml["color_space_conversion"]
             self.parm_cse = c_yaml["color_saturation_enhancement"]
             self.parm_ldci = c_yaml["ldci"]
@@ -224,8 +220,16 @@ class BrilliantISP:
             self.tone_mapping = c_yaml["tone_mapping"]
             self.tone_mapping_before_demosaic = self.tone_mapping["tone_mapping_before_demosaic"]
             self.tone_mapper=self.tone_mapping["tone_mapper"]
-            if self.tone_mapper=='TMOz':
-                self.TMOz_sorround_cond=c_yaml["TMOz_sorround_cond"]
+            if self.tone_mapper == "aces":
+                self.param_aces = c_yaml.get("aces", {})
+            if self.tone_mapper == "integer":
+                self.param_integer_tmo = c_yaml.get("integer_tmo", {})
+            if self.tone_mapper == "aces_integer":
+                self.param_aces_integer = c_yaml.get("aces_integer", {})
+            if self.tone_mapper == "hable":
+                self.param_hable = c_yaml.get("hable", {})
+            if self.tone_mapper == "hable_integer":
+                self.param_hable_integer = c_yaml.get("hable_integer", {})
 
         # add rgb_output_conversion module
 
@@ -375,7 +379,7 @@ class BrilliantISP:
             hdr_raw = tone_mapper.execute()
             self.logger.info(f"HDR Image mean: {np.mean(hdr_raw)}")
         else:
-            max_val = 2**24 - 1
+            max_val = 2**self.sensor_info.get("hdr_bit_depth", 24) - 1
             hdr_raw = (wb_raw.astype(np.float32) * (65535.0 / max_val)).astype(np.uint16)
 
 #%%        # =====================================================================
@@ -547,7 +551,7 @@ class BrilliantISP:
             # Run ISP-Pipeline till Correct Exposure with AWB gains
             self.execute_with_3a_statistics()
 
-        util.display_ae_statistics(self.ae_feedback, self.awb_gains)
+        util.display_ae_statistics(self.ae_feedback, self.awb_gains, self.logger)
 
         # Print Logs to mark end of pipeline Execution
         self.logger.info(50 * "-" + "\n")

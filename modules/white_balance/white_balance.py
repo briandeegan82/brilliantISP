@@ -30,7 +30,7 @@ class WhiteBalance:
         self.sensor_info = sensor_info
         self.parm_wbc = parm_wbc
         self.bayer = self.sensor_info["bayer_pattern"]
-        self.bpp = self.sensor_info["hdr_bit_depth"]
+        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.raw = None
         self.awb_gains = awb_gains
         # Initialize debug logger
@@ -47,8 +47,8 @@ class WhiteBalance:
         self.raw = np.float32(self.img)
 
         if self.is_debug:
-            print("   - WB  - red gain : ", redgain)
-            print("   - WB  - blue gain: ", bluegain)
+            self.logger.info(f"   - WB  - red gain : {redgain}")
+            self.logger.info(f"   - WB  - blue gain: {bluegain}")
 
         if self.bayer == "rggb":
             self.raw[::2, ::2] = self.raw[::2, ::2] * redgain
@@ -93,7 +93,7 @@ class WhiteBalance:
         """
 
         if self.enable is True:
-            print("White balancing = " + "True")
+            self.logger.info("White balancing = True")
             start = time.time()
             wb_out = self.apply_wb_parameters()
             self.logger.info(f"  Execution time: {time.time() - start:.3f}s")

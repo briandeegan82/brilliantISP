@@ -3,13 +3,15 @@ This script is used to recursively process one .raw file per folder from a speci
 and save ISP-converted images to a "convert" subfolder in each directory containing .raw files.
 Based on isp_pipeline_mulitple_images.py
 """
-
+import logging
 import os
 from pathlib import Path
 from tqdm import tqdm
 from brilliant_isp import BrilliantISP
 
 from util.config_utils import parse_file_name, extract_raw_metadata
+
+_log = logging.getLogger(__name__)
 
 # Configuration
 INPUT_ROOT_PATH = "/media/brian/T7/Triton_Images"  # Root folder to search for .raw files
@@ -65,29 +67,29 @@ def process_single_raw_file(raw_file_path, config_path):
     
     # Check if specific config exists for this file
     if os.path.exists(config_file):
-        print(f"Found specific config: {config_file}")
+        _log.info(f"Found specific config: {config_file}")
         brilliant_isp.load_config(config_file)
         brilliant_isp.execute(file_name, load_method='3byte', byte_order='big')
     else:
-        print(f"Using default config for: {file_name}")
+        _log.info(f"Using default config for: {file_name}")
         
         # Extract sensor info if enabled
         if EXTRACT_SENSOR_INFO:
             if file_name.lower().endswith('.raw'):
-                print(f"RAW file, extracting sensor info from filename: {file_name}")
+                _log.info(f"RAW file, extracting sensor info from filename: {file_name}")
                 sensor_info = parse_file_name(file_name)
                 if sensor_info:
                     brilliant_isp.update_sensor_info(sensor_info)
-                    print("Updated sensor_info in config")
+                    _log.info("Updated sensor_info in config")
                 else:
-                    print("No information in filename - sensor_info not updated")
+                    _log.info("No information in filename - sensor_info not updated")
             else:
                 sensor_info = extract_raw_metadata(raw_file_path)
                 if sensor_info:
                     brilliant_isp.update_sensor_info(sensor_info, UPDATE_BLC_WB)
-                    print("Updated sensor_info in config")
+                    _log.info("Updated sensor_info in config")
                 else:
-                    print("Not compatible file for metadata - sensor_info not updated")
+                    _log.info("Not compatible file for metadata - sensor_info not updated")
         
         brilliant_isp.execute(file_name, load_method='3byte', byte_order='big')
 
@@ -96,25 +98,25 @@ def batch_convert_raw_files():
     """
     Recursively find all .raw files in INPUT_ROOT_PATH and convert them
     """
-    print(f"Searching for .raw files in: {INPUT_ROOT_PATH}")
+    _log.info(f"Searching for .raw files in: {INPUT_ROOT_PATH}")
     
     # Find all .raw files recursively
     raw_files = find_raw_files_recursively(INPUT_ROOT_PATH)
     
     if not raw_files:
-        print(f"No .raw files found in {INPUT_ROOT_PATH}")
+        _log.warning(f"No .raw files found in {INPUT_ROOT_PATH}")
         return
     
-    print(f"Found {len(raw_files)} folders with .raw files to process (one file per folder)")
+    _log.info(f"Found {len(raw_files)} folders with .raw files to process (one file per folder)")
     
     # Process each .raw file
     for raw_file in tqdm(raw_files, desc="Converting .raw files (one per folder)", ncols=100):
         try:
-            print(f"\nProcessing: {raw_file}")
+            _log.info(f"Processing: {raw_file}")
             process_single_raw_file(raw_file, CONFIG_PATH)
-            print(f"Successfully processed: {raw_file}")
+            _log.info(f"Successfully processed: {raw_file}")
         except Exception as e:
-            print(f"Error processing {raw_file}: {str(e)}")
+            _log.error(f"Error processing {raw_file}: {str(e)}")
             continue
 
 
@@ -129,14 +131,15 @@ def find_files(filename, search_path):
 
 
 if __name__ == "__main__":
-    print("BATCH CONVERTING RAW FILES RECURSIVELY")
-    print(f"Input root path: {INPUT_ROOT_PATH}")
-    print(f"Default config: {CONFIG_PATH}")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    _log.info("BATCH CONVERTING RAW FILES RECURSIVELY")
+    _log.info(f"Input root path: {INPUT_ROOT_PATH}")
+    _log.info(f"Default config: {CONFIG_PATH}")
     
     # Check if input path exists
     if not os.path.exists(INPUT_ROOT_PATH):
-        print(f"Error: Input path {INPUT_ROOT_PATH} does not exist!")
+        _log.error(f"Input path {INPUT_ROOT_PATH} does not exist!")
         exit(1)
     
     batch_convert_raw_files()
-    print("\nBatch conversion completed!") 
+    _log.info("Batch conversion completed!") 

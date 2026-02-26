@@ -6,6 +6,7 @@ https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pd
 Author: 10xEngineers Pvt Ltd
 ------------------------------------------------------------
 """
+import logging
 import time
 import re
 import numpy as np
@@ -56,10 +57,11 @@ class ScaleGPU:
         self.use_gpu = (is_gpu_available() and 
                        should_use_gpu((sensor_info["height"], sensor_info["width"]), 'resize'))
         
+        self._log = logging.getLogger(__name__)
         if self.use_gpu:
-            print("  Using GPU acceleration for Image Scaling")
+            self._log.info("  Using GPU acceleration for Image Scaling")
         else:
-            print("  Using CPU implementation for Image Scaling")
+            self._log.info("  Using CPU implementation for Image Scaling")
 
     def apply_scaling(self):
         """Execute GPU-accelerated scaling."""
@@ -67,7 +69,7 @@ class ScaleGPU:
         # check if no change in size
         if self.old_size == self.new_size:
             if self.is_debug:
-                print("   - Output size is the same as input size.")
+                self._log.info("   - Output size is the same as input size.")
             return self.img
 
         if self.img.dtype == "float32":
@@ -124,7 +126,7 @@ class ScaleGPU:
             return scaled_ch
             
         except Exception as e:
-            print(f"    GPU scaling failed, falling back to CPU: {e}")
+            self._log.warning(f"    GPU scaling failed, falling back to CPU: {e}")
             return self.scale_channel_cpu(ch_arr, interpolation)
 
     def scale_channel_cpu(self, ch_arr, interpolation):
@@ -179,13 +181,13 @@ class ScaleGPU:
         """
         Applying scaling to input image
         """
-        print("Scale = " + str(self.enable))
+        self._log.info(f"Scale = {self.enable}")
 
         if self.enable is True:
             start = time.time()
             s_out = self.apply_scaling()
             execution_time = time.time() - start
-            print(f"  Execution time: {execution_time:.3f}s")
+            self._log.info(f"  Execution time: {execution_time:.3f}s")
             self.img = s_out
 
         self.save()
