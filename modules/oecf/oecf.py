@@ -26,19 +26,26 @@ class OECF:
         self.logger = get_debug_logger("OECF", config=self.platform)
 
     def apply_oecf(self):
-        """Execute OECF."""
-        raw = self.img
+        """Execute OECF. Uses r_lut from config, or identity (passthrough) if missing."""
+        raw = np.asarray(self.img)
+
+        # Identity LUT when r_lut not in config (passthrough)
+        r_lut = self.parm_oecf.get("r_lut")
+        if r_lut is None:
+            bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
+            max_val = 2**bpp - 1
+            return np.clip(raw, 0, max_val).astype(
+                np.uint32 if max_val > 65535 else np.uint16, copy=False
+            )
 
         # get config parm
         bayer = self.sensor_info["bayer_pattern"]
         bpp = self.sensor_info["bit_depth"]
 
-        # duplicating r_lut here - when correcting add LUTs for each channel
-        # in config.yml and load here
-        rd_lut = np.uint16(np.array(self.parm_oecf["r_lut"]))
-        gr_lut = np.uint16(np.array(self.parm_oecf["r_lut"]))
-        gb_lut = np.uint16(np.array(self.parm_oecf["r_lut"]))
-        bl_lut = np.uint16(np.array(self.parm_oecf["r_lut"]))
+        rd_lut = np.uint16(np.array(r_lut))
+        gr_lut = np.uint16(np.array(self.parm_oecf.get("gr_lut", r_lut)))
+        gb_lut = np.uint16(np.array(self.parm_oecf.get("gb_lut", r_lut)))
+        bl_lut = np.uint16(np.array(self.parm_oecf.get("bl_lut", r_lut)))
 
         raw_oecf = np.zeros(raw.shape)
 

@@ -129,7 +129,6 @@ from modules.bayer_noise_reduction.bayer_noise_reduction import (
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
 from modules.white_balance.white_balance import WhiteBalance as WB
 from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
-# from modules.hdr_durand.hdr_durand_fast import HDRDurandToneMapping as HDR
 from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
 from modules.demosaic.demosaic import Demosaic
 from modules.color_correction_matrix.color_correction_matrix import (
@@ -340,8 +339,8 @@ class BrilliantISP:
         oecf_raw = oecf.execute()
 
         # =====================================================================
-        # Digital Gain
-        dga = DG(cmpd_raw, self.platform, self.sensor_info, self.parm_dga)
+        # Digital Gain (receives OECF output per pipeline order: PWC -> OECF -> DG)
+        dga = DG(oecf_raw, self.platform, self.sensor_info, self.parm_dga)
         dga_raw, self.dga_current_gain = dga.execute()
 
 

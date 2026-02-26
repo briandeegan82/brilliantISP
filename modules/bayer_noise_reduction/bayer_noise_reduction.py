@@ -1,7 +1,7 @@
 from util.debug_utils import get_debug_logger
 """
 File: bayer_noise_reduction.py
-Description: Noise reduction in bayer domain with GPU acceleration and NumPy optimizations
+Description: Noise reduction in Bayer domain with optional GPU acceleration.
 Author: 10xEngineers
 ------------------------------------------------------------
 """
@@ -18,17 +18,9 @@ try:
 except ImportError:
     GPU_VERSION_AVAILABLE = False
 
-# Try to import optimized version with NumPy broadcast
-try:
-    from modules.bayer_noise_reduction.joint_bf_optimized import JointBFOptimized as JBFOPT
-    OPTIMIZED_VERSION_AVAILABLE = True
-except ImportError:
-    OPTIMIZED_VERSION_AVAILABLE = False
-
-
 class BayerNoiseReduction:
     """
-    Noise Reduction in Bayer domain with GPU acceleration and NumPy optimizations
+    Noise Reduction in Bayer domain. Uses GPU if available, else CPU.
     """
 
     def __init__(self, img, sensor_info, parm_bnr, platform):
@@ -56,17 +48,9 @@ class BayerNoiseReduction:
 
     def apply_bnr(self):
         """
-        Apply bnr to the input image and return the output image
-        Uses optimized version with NumPy broadcast, GPU acceleration if available, falls back to CPU otherwise
+        Apply BNR to the input image. Uses GPU if available, else CPU.
         """
-        # Priority: Optimized > GPU > Original
-        # DISABLED: Optimization is causing image corruption
-        if False and OPTIMIZED_VERSION_AVAILABLE:
-            # Use optimized version with NumPy broadcast operations
-            self.logger.info("  Using optimized Bayer Noise Reduction with NumPy broadcast")
-            jbf = JBFOPT(self.img, self.sensor_info, self.parm_bnr, self.platform)
-            bnr_out_img = jbf.apply_jbf()
-        elif self.use_gpu and GPU_VERSION_AVAILABLE:
+        if self.use_gpu and GPU_VERSION_AVAILABLE:
             # Use GPU-accelerated version
             self.logger.info("  Using GPU-accelerated Bayer Noise Reduction")
             jbf = JBFGPU(self.img, self.sensor_info, self.parm_bnr, self.platform)
