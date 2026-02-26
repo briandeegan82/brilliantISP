@@ -36,7 +36,7 @@ class LensShadingCorrection:
     """
 
     def __init__(self, img, platform, sensor_info, parm_lsc):
-        self.img = np.asarray(img, dtype=np.float64)
+        self.img = np.asarray(img, dtype=np.float32)
         self.enable = parm_lsc.get("is_enable", True)
         self.is_save = parm_lsc.get("is_save", False)
         self.sensor_info = sensor_info
