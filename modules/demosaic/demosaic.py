@@ -22,6 +22,37 @@ from modules.demosaic.bilinear_demosaic import (
     BilinearDemosaic as BILINEAR
 )
 
+# Import VNG demosaic options
+from modules.demosaic.vng_demosaic import (
+    VNGDemosaic as VNG,
+    VNGDemosaicOptimized as VNG_OPT
+)
+
+# Import Hamilton-Adams demosaic options
+from modules.demosaic.hamilton_adams_demosaic import (
+    HamiltonAdamsDemosaic as HA,
+    HamiltonAdamsOptimized as HA_OPT
+)
+
+# Import PPG demosaic options
+from modules.demosaic.ppg_demosaic import (
+    PPGDemosaic as PPG,
+    PPGDemosaicOptimized as PPG_OPT
+)
+
+# Import LMMSE demosaic options
+from modules.demosaic.lmmse_demosaic import (
+    LMMSEDemosaic as LMMSE,
+    LMMSEDemosaicOptimized as LMMSE_OPT,
+    LMMSEDemosaicFast as LMMSE_FAST
+)
+
+# Import AHD demosaic options
+from modules.demosaic.ahd_demosaic import (
+    AHDDemosaic as AHD,
+    AHDDemosaicOptimized as AHD_OPT
+)
+
 
 class Demosaic:
     "CFA Interpolation"
@@ -71,8 +102,17 @@ class Demosaic:
             algorithm (str): Demosaic algorithm to use
                 - "malvar": Malvar-He-Cutler (default, high quality)
                 - "bilinear": Simple bilinear interpolation
-                - "bilinear_opt": Optimized bilinear using NumPy operations
-                - "bilinear_fast": Fastest bilinear using simple averaging
+                - "vng": Variable Number of Gradients (edge-directed, high quality)
+                - "vng_opt": Optimized VNG using vectorized operations (faster)
+                - "hamilton_adams": Hamilton-Adams (color ratio based, excellent quality)
+                - "hamilton_adams_opt": Optimized Hamilton-Adams (faster)
+                - "ppg": PPG - Patterned Pixel Grouping (iterative refinement, excellent quality)
+                - "ppg_opt": Optimized PPG with enhanced pattern recognition (best quality)
+                - "lmmse": LMMSE - Linear Minimum Mean Square Error (statistical, excellent quality)
+                - "lmmse_opt": Optimized LMMSE with enhanced statistics (superior quality)
+                - "lmmse_fast": Fast LMMSE with simplified estimation (good quality, faster)
+                - "ahd": AHD - Adaptive Homogeneity-Directed (dual interpolation, excellent quality)
+                - "ahd_opt": Optimized AHD with enhanced homogeneity analysis (superior quality)
         """
         # 3D masks according to the given bayer
         masks = self.masks_cfa_bayer()
@@ -89,6 +129,49 @@ class Demosaic:
             bilinear = BILINEAR(self.img, masks)
             demos_out = bilinear.apply_bilinear()
             
+        elif algorithm == "vng":
+            vng = VNG(self.img, masks)
+            demos_out = vng.apply_vng()
+            
+        elif algorithm == "vng_opt":
+            vng_opt = VNG_OPT(self.img, masks)
+            demos_out = vng_opt.apply_vng_optimized()
+            
+        elif algorithm == "hamilton_adams":
+            ha = HA(self.img, masks)
+            demos_out = ha.apply_hamilton_adams()
+            
+        elif algorithm == "hamilton_adams_opt":
+            ha_opt = HA_OPT(self.img, masks)
+            demos_out = ha_opt.apply_hamilton_adams_optimized()
+            
+        elif algorithm == "ppg":
+            ppg = PPG(self.img, masks)
+            demos_out = ppg.apply_ppg()
+            
+        elif algorithm == "ppg_opt":
+            ppg_opt = PPG_OPT(self.img, masks)
+            demos_out = ppg_opt.apply_ppg_optimized()
+            
+        elif algorithm == "lmmse":
+            lmmse = LMMSE(self.img, masks)
+            demos_out = lmmse.apply_lmmse()
+            
+        elif algorithm == "lmmse_opt":
+            lmmse_opt = LMMSE_OPT(self.img, masks)
+            demos_out = lmmse_opt.apply_lmmse_optimized()
+            
+        elif algorithm == "lmmse_fast":
+            lmmse_fast = LMMSE_FAST(self.img, masks)
+            demos_out = lmmse_fast.apply_lmmse_fast()
+            
+        elif algorithm == "ahd":
+            ahd = AHD(self.img, masks)
+            demos_out = ahd.apply_ahd()
+            
+        elif algorithm == "ahd_opt":
+            ahd_opt = AHD_OPT(self.img, masks)
+            demos_out = ahd_opt.apply_ahd_optimized()
             
         else:
             raise ValueError(f"Unknown demosaic algorithm: {algorithm}")
@@ -122,8 +205,17 @@ class Demosaic:
             algorithm (str, optional): Demosaic algorithm to use. If None, uses algorithm from config.
                 - "malvar": Malvar-He-Cutler (default, high quality)
                 - "bilinear": Simple bilinear interpolation
-                - "bilinear_opt": Optimized bilinear using NumPy operations
-                - "bilinear_fast": Fastest bilinear using simple averaging
+                - "vng": Variable Number of Gradients (edge-directed, high quality)
+                - "vng_opt": Optimized VNG using vectorized operations (faster)
+                - "hamilton_adams": Hamilton-Adams (color ratio based, excellent quality)
+                - "hamilton_adams_opt": Optimized Hamilton-Adams (faster)
+                - "ppg": PPG - Patterned Pixel Grouping (iterative refinement, excellent quality)
+                - "ppg_opt": Optimized PPG with enhanced pattern recognition (best quality)
+                - "lmmse": LMMSE - Linear Minimum Mean Square Error (statistical, excellent quality)
+                - "lmmse_opt": Optimized LMMSE with enhanced statistics (superior quality)
+                - "lmmse_fast": Fast LMMSE with simplified estimation (good quality, faster)
+                - "ahd": AHD - Adaptive Homogeneity-Directed (dual interpolation, excellent quality)
+                - "ahd_opt": Optimized AHD with enhanced homogeneity analysis (superior quality)
         """
         # Use algorithm from config if not specified
         if algorithm is None:

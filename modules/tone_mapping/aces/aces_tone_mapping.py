@@ -9,6 +9,10 @@ import numpy as np
 import time
 from util.debug_utils import get_debug_logger
 from util.utils import save_output_array
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
 
 
 class ACESToneMapping:
@@ -32,6 +36,7 @@ class ACESToneMapping:
         self.is_enable = params.get("is_enable", True)
         self.is_save = params.get("is_save", False)
         self.is_debug = params.get("is_debug", False)
+        self.is_plot_curve = params.get("is_plot_curve", False)
         
         # ACES parameters
         self.exposure_adjust = params.get("exposure_adjust",
@@ -205,6 +210,46 @@ class ACESToneMapping:
         
         return sdr_output
     
+    def plot_tone_curve(self):
+        """Plot and save the ACES tone mapping curve."""
+        if not self.is_plot_curve:
+            return
+        
+        try:
+            # Generate input range for HDR (0 to 100 typical HDR range in cd/m²)
+            x = np.linspace(0, 100, 1000)
+            
+            # Apply ACES curve
+            y_rrt = self._aces_tone_curve(x)
+            
+            # Apply gamma (ODT)
+            y_full = self._apply_srgb_gamma(y_rrt, self.gamma)
+            
+            # Create plot with actual values (not normalized)
+            plt.figure(figsize=(10, 7))
+            plt.plot(x, y_rrt, 'b-', linewidth=2, label='ACES RRT (filmic curve)')
+            plt.plot(x, y_full, 'g-', linewidth=2, label='ACES RRT + ODT (with gamma)')
+            plt.plot([0, 100], [0, 1], 'r--', linewidth=1, alpha=0.5, label='Linear (no tone mapping)')
+            plt.grid(True, alpha=0.3)
+            plt.xlabel('Input (HDR, cd/m²)', fontsize=12)
+            plt.ylabel('Output (0 to 1)', fontsize=12)
+            plt.title(f'ACES Tone Mapping Curve\n(exposure_adj={self.exposure_adjust:.1f} EV, gamma={self.gamma})', fontsize=14)
+            plt.legend(fontsize=10)
+            plt.xlim([0, 100])
+            plt.ylim([0, 1])
+            
+            # Save plot
+            output_dir = self.platform.get('output_dir', 'module_output')
+            os.makedirs(output_dir, exist_ok=True)
+            plot_filename = os.path.join(output_dir, 'tone_curve_aces.png')
+            plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            self.logger.info(f"  Tone mapping curve saved to: {plot_filename}")
+            
+        except Exception as e:
+            self.logger.warning(f"  Failed to plot tone curve: {e}")
+    
     def save(self):
         """Save tone mapping output"""
         if self.is_save:
@@ -227,6 +272,9 @@ class ACESToneMapping:
         if self.is_enable is True:
             self.logger.info("Executing ACES Tone Mapping...")
             start = time.time()
+            
+            # Plot the curve if debug option is enabled
+            self.plot_tone_curve()
             
             try:
                 self.img = self.apply_tone_mapping()

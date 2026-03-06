@@ -4,6 +4,10 @@ from util.utils import save_output_array
 import time
 
 from util.debug_utils import get_debug_logger
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
 # Try to import GPU-accelerated version
 try:
     from modules.tone_mapping.durand.hdr_durand_fast_gpu import HDRDurandToneMappingGPU
@@ -21,6 +25,7 @@ class HDRDurandToneMapping:
         self.is_enable = params.get("is_enable", True)
         self.is_save = params.get("is_save", False)
         self.is_debug = params.get("is_debug", False)
+        self.is_plot_curve = params.get("is_plot_curve", False)
         self.sigma_space = params.get("sigma_space", 2.0)
         self.sigma_color = params.get("sigma_color", 0.4)
         self.contrast_factor = params.get("contrast_factor", 2.0)
@@ -90,6 +95,72 @@ class HDRDurandToneMapping:
         output_luminance = (output_luminance - np.min(output_luminance)) / (np.max(output_luminance) - np.min(output_luminance))
         return output_luminance
 
+    def plot_tone_curve(self):
+        """Plot and save a representative Durand tone mapping curve.
+        
+        Note: Durand is a local/adaptive tone mapper, so the actual mapping varies per pixel.
+        This plot shows the typical compression effect on the base layer in log domain.
+        """
+        if not self.is_plot_curve:
+            return
+        
+        try:
+            # Create a synthetic HDR range to demonstrate the curve behavior
+            # Log domain input (typical HDR range 0.01 to 100)
+            log_input = np.linspace(-2, 2, 1000)  # Log10 range
+            
+            # Simulate base layer compression (what Durand does to the low-freq component)
+            log_compressed = log_input / self.contrast_factor
+            
+            # Convert to linear domain for visualization
+            linear_input = np.power(10, log_input)
+            linear_output = np.power(10, log_compressed)
+            
+            # Create plot
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+            
+            # Plot 1: Log domain (base layer compression)
+            ax1.plot(log_input, log_compressed, 'b-', linewidth=2, label='Compressed base layer')
+            ax1.plot(log_input, log_input, 'r--', linewidth=1, alpha=0.5, label='Linear (no compression)')
+            ax1.grid(True, alpha=0.3)
+            ax1.set_xlabel('Log10(Input)', fontsize=12)
+            ax1.set_ylabel('Log10(Output)', fontsize=12)
+            ax1.set_title(f'Durand Base Layer Compression (Log Domain)\n(contrast_factor={self.contrast_factor})', fontsize=12)
+            ax1.legend(fontsize=10)
+            
+            # Plot 2: Linear domain (overall effect)
+            ax2.plot(linear_input, linear_output, 'b-', linewidth=2, label='Durand tone curve')
+            ax2.plot([linear_input.min(), linear_input.max()], 
+                     [linear_input.min(), linear_input.max()], 
+                     'r--', linewidth=1, alpha=0.5, label='Linear (no tone mapping)')
+            ax2.grid(True, alpha=0.3)
+            ax2.set_xlabel('Input (cd/m²)', fontsize=12)
+            ax2.set_ylabel('Output (cd/m²)', fontsize=12)
+            ax2.set_title('Durand Overall Effect (Linear Domain)', fontsize=12)
+            ax2.legend(fontsize=10)
+            ax2.set_xlim([linear_input.min(), linear_input.max()])
+            ax2.set_ylim([linear_output.min(), linear_output.max()])
+            
+            plt.tight_layout()
+            
+            # Add note
+            fig.text(0.5, 0.02, 
+                    'Note: Durand is a local/adaptive tone mapper. The actual mapping varies per pixel based on local content.\n'
+                    'This plot shows the typical compression behavior applied to the base (low-frequency) layer.',
+                    ha='center', fontsize=9, style='italic', wrap=True)
+            
+            # Save plot
+            output_dir = self.platform.get('output_dir', 'module_output')
+            os.makedirs(output_dir, exist_ok=True)
+            plot_filename = os.path.join(output_dir, 'tone_curve_durand.png')
+            plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            self.logger.info(f"  Tone mapping curve saved to: {plot_filename}")
+            
+        except Exception as e:
+            self.logger.warning(f"  Failed to plot tone curve: {e}")
+
     
     def save(self):
         if self.is_save:
@@ -100,6 +171,9 @@ class HDRDurandToneMapping:
         if self.is_enable is True:
             self.logger.info("Executing HDR Durand Tone Mapping...")
             start = time.time()
+            
+            # Plot the curve if debug option is enabled
+            self.plot_tone_curve()
             
             # Use GPU-accelerated version if available and beneficial
             if self.use_gpu and GPU_VERSION_AVAILABLE:

@@ -16,6 +16,7 @@ import os
 
 import util.utils as util
 from util.debug_utils import get_debug_logger
+from util.histogram_utils import plot_histogram_comparison, estimate_dynamic_range
 
 # HDR Image Reading Functions
 
@@ -155,6 +156,7 @@ class BrilliantISP:
 
         # Extract workspace info
         self.platform = c_yaml["platform"]
+        self.platform["output_dir"] = "module_output"  # Directory for module debug outputs (curves, etc)
         self.raw_file = self.platform["filename"]
         self.render_3a = self.platform["render_3a"]
         self.sensor_info = c_yaml["sensor_info"]
@@ -192,8 +194,9 @@ class BrilliantISP:
         self.tone_mapper = self.tone_mapping["tone_mapper"]
         if self.tone_mapper == "aces":
             self.param_aces = c_yaml.get("aces", {})
-        if self.tone_mapper == "integer":
-            self.param_integer_tmo = c_yaml.get("integer_tmo", {})
+        if self.tone_mapper in ["integer", "reinhard_integer"]:
+            # Support both "integer_tmo" and "reinhard_integer" as config section names
+            self.param_integer_tmo = c_yaml.get("reinhard_integer", c_yaml.get("integer_tmo", {}))
         if self.tone_mapper == "aces_integer":
             self.param_aces_integer = c_yaml.get("aces_integer", {})
         if self.tone_mapper == "hable":
@@ -329,6 +332,9 @@ class BrilliantISP:
             cmpd = PWC(blc_raw, self.platform, self.sensor_info, self.parm_cmpd)
             cmpd_raw = cmpd.execute()
 
+        # Store decompanded image for histogram comparison later
+        self.decompanded_img = cmpd_raw.copy()
+
         # =====================================================================
         # OECF
         if skip_disabled and not self.parm_oec.get("is_enable", False):
@@ -405,20 +411,28 @@ class BrilliantISP:
             ccm_img = CCM_tone_mapped
             
         # =====================================================================
-        # Gamma
-        gmc = GC(ccm_img, self.platform, self.sensor_info, self.parm_gmc)
-        gamma_raw = gmc.execute()
-        self.logger.info(f"Gamma Image mean: {np.mean(gamma_raw)}")
-
-        # =====================================================================
-        # Auto-Exposure
-        aef = AE(gamma_raw, self.sensor_info, self.parm_ae)
+        # Auto-Exposure (operates on 16-bit linear RGB before bit conversion)
+        # This provides maximum precision for exposure metering
+        aef = AE(ccm_img, self.sensor_info, self.parm_ae)
         self.ae_feedback = aef.execute()
         self.logger.info(f"AE Feedback: {self.ae_feedback}")
 
         # =====================================================================
-        # Color space conversion
-        csc = CSC(gamma_raw, self.platform, self.sensor_info, self.parm_csc, self.parm_cse )
+        # Convert 16-bit linear RGB to 8-bit linear RGB for YUV processing
+        # CSC and downstream YUV modules expect 8-bit input
+        # IMPORTANT: This is a LINEAR conversion (no gamma applied)
+        # Formula: output = input × (255/65535) = input / 257
+        # This differs from Infinite-ISP which uses gamma for bit conversion
+        # See: GAMMA_CORRECTION_FINAL_SOLUTION.md for rationale
+        self.logger.info(f"Converting 16-bit linear RGB to 8-bit linear RGB for YUV processing")
+        self.logger.info(f"  Input range: [{np.min(ccm_img)}, {np.max(ccm_img)}]")
+        linear_8bit = np.clip((ccm_img.astype(np.float32) / 65535.0 * 255.0), 0, 255).astype(np.uint8)
+        self.logger.info(f"  Output range: [{np.min(linear_8bit)}, {np.max(linear_8bit)}]")
+
+        # =====================================================================
+        # Color space conversion (operates on 8-bit linear RGB)
+        # ITU-R BT.601/709 standards require linear RGB input for correct color math
+        csc = CSC(linear_8bit, self.platform, self.sensor_info, self.parm_csc, self.parm_cse )
         csc_img = csc.execute()
         self.logger.info(f"CSC Image mean: {np.mean(csc_img)}")
 
@@ -465,19 +479,31 @@ class BrilliantISP:
             nr2d_img = nr2d.execute()
 
         # =====================================================================
-        # RGB conversion
+        # RGB conversion (YUV→RGB, outputs 8-bit linear RGB)
         rgbc = RGBC(
             nr2d_img, self.platform, self.sensor_info, self.parm_rgb, self.parm_csc
         )
         rgbc_img = rgbc.execute()
+        self.logger.info(f"RGB Conversion output range: [{np.min(rgbc_img)}, {np.max(rgbc_img)}]")
+
+        # =====================================================================
+        # Gamma correction (8-bit linear RGB → 8-bit gamma-corrected RGB)
+        # IMPORTANT: Applied AFTER YUV processing, as final OETF encoding step
+        # This is the correct position per IEC 61966-2-1 (sRGB) and industry standards
+        # Differs from Infinite-ISP which applies gamma before CSC (pragmatic but incorrect)
+        # Gamma acts as Opto-Electronic Transfer Function (OETF) for display encoding
+        # See: GAMMA_CORRECTION_FINAL_SOLUTION.md for detailed rationale
+        gmc = GC(rgbc_img, self.platform, self.sensor_info, self.parm_gmc)
+        gamma_img = gmc.execute()
+        self.logger.info(f"Gamma output range: [{np.min(gamma_img)}, {np.max(gamma_img)}]")
 
         # =====================================================================
         # Scaling
         if skip_disabled and not self.parm_sca["is_enable"]:
-            scaled_img = rgbc_img
+            scaled_img = gamma_img
         else:
             scale = Scale(
-                rgbc_img,
+                gamma_img,
                 self.platform,
                 self.sensor_info,
                 self.parm_sca,
@@ -531,6 +557,41 @@ class BrilliantISP:
             short_names = self.platform.get("short_output_names", False)
             if not short_names:
                 self.outFileName = self.outFileName + "TM_" + str(self.tone_mapper) + "_s_" + str(self.parm_cse['saturation_gain']) + "_CCM_" + str(self.parm_ccm['is_enable']) + "_Before_Demosaic_" + str(self.tone_mapping_before_demosaic)
+
+            # Plot histograms if enabled (debug feature)
+            if self.platform.get('plot_histograms', False):
+                try:
+                    # Estimate dynamic range of input (after decompanding)
+                    input_dr = estimate_dynamic_range(self.decompanded_img)
+                    self.logger.info(f"Input Dynamic Range (after decompanding): {input_dr['dynamic_range_ev']:.2f} EV")
+                    self.logger.info(f"Input Min: {input_dr['min_val']:.0f}, Max: {input_dr['max_val']:.0f}")
+                    self.logger.info(f"Input Percentiles (0.1%, 99.9%): {input_dr['percentile_min']:.0f}, {input_dr['percentile_max']:.0f}")
+                    self.logger.info(f"Input Bit Depth Utilized: {input_dr['bit_depth_utilized']:.1f} bits")
+                    
+                    # Estimate dynamic range of output
+                    output_dr = estimate_dynamic_range(out_rgb)
+                    self.logger.info(f"Output Dynamic Range: {output_dr['dynamic_range_ev']:.2f} EV")
+                    self.logger.info(f"Output Min: {output_dr['min_val']:.0f}, Max: {output_dr['max_val']:.0f}")
+                    self.logger.info(f"Output Percentiles (0.1%, 99.9%): {output_dr['percentile_min']:.0f}, {output_dr['percentile_max']:.0f}")
+                    self.logger.info(f"Output Bit Depth Utilized: {output_dr['bit_depth_utilized']:.1f} bits")
+                    
+                    # Generate histogram comparison plot
+                    show_log = self.platform.get('histogram_show_log', True)
+                    histogram_filename = f"{self.out_file}_histogram_comparison.png"
+                    
+                    plot_histogram_comparison(
+                        self.decompanded_img,
+                        out_rgb,
+                        output_dir=self.platform["output_dir"],
+                        filename=histogram_filename,
+                        input_label="Input (after decompanding)",
+                        output_label="Output",
+                        show_log=show_log
+                    )
+                    
+                    self.logger.info(f"Histogram comparison saved to: {self.platform['output_dir']}/{histogram_filename}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to plot histograms: {e}")
 
             util.save_pipeline_output(self.out_file, out_rgb, self.c_yaml, self.outFileName, self.output_path, short_names=short_names)
 

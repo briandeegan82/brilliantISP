@@ -56,18 +56,36 @@ class GammaCorrection:
     def apply_gamma(self):
         """
         Apply Gamma LUT on n-bit Image.
-        Input: 16-bit RGB (pipeline convention from CCM/tone mapping).
+        Input: Can be 8-bit (from RGB conversion) or 16-bit (from CCM/tone mapping).
         """
-        input_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
+        # Detect input bit depth from image data type and range
+        if self.img.dtype == np.uint8:
+            input_bit_depth = 8
+        elif self.img.dtype == np.uint16:
+            input_bit_depth = 16
+        else:
+            # Check actual data range for float types
+            max_val = np.max(self.img)
+            if max_val <= 255:
+                input_bit_depth = 8
+            else:
+                input_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
+        
+        self.logger.info(f"  Input dtype: {self.img.dtype}, detected bit depth: {input_bit_depth}, output bit depth: {self.output_bit_depth}")
+        self.logger.info(f"  Input range: [{np.min(self.img)}, {np.max(self.img)}]")
+        
         input_max = 2**input_bit_depth - 1
         lut = self.generate_gamma_lut(input_bit_depth).T
 
         # apply LUT
         gamma_img = lut[self.img]
         if self.output_bit_depth == 8:
-            gamma_img = np.clip(
-                (gamma_img.astype(np.float32) / input_max * 255), 0, 255
-            ).astype(np.uint8)
+            if input_bit_depth != 8:
+                gamma_img = np.clip(
+                    (gamma_img.astype(np.float32) / input_max * 255), 0, 255
+                ).astype(np.uint8)
+            else:
+                gamma_img = gamma_img.astype(np.uint8)
             return gamma_img
         elif self.output_bit_depth == 16:
             return gamma_img

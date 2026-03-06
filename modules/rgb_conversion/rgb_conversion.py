@@ -106,7 +106,10 @@ class RGBConversion:
         self.logger.info(f"RGB Conversion = {self.enable}")
         if self.enable:
             start = time.time()
+            self.logger.info(f"  Input dtype: {self.yuv_img.dtype}, shape: {self.yuv_img.shape}")
+            self.logger.info(f"  Input range: [{np.min(self.yuv_img)}, {np.max(self.yuv_img)}]")
             rgb_out = self.yuv_to_rgb()
+            self.logger.info(f"  Output dtype: {rgb_out.dtype}, range: [{np.min(rgb_out)}, {np.max(rgb_out)}]")
             self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = rgb_out
         self.save()

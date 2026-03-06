@@ -17,92 +17,66 @@ _log = logging.getLogger(__name__)
 
 # Configuration
 RAW_DATA = "./in_frames/hdr_mode/"
-FILENAME = 'image_0.raw'
+FILENAME = 'svs_uog.raw'
 OUTPUT_BASE_PATH = "./out_frames/multiple_configs/"
 
 # List of configuration files to test
 CONFIG_FILES = [
-    "triton_490.yml"
+    "svs_cam.yml"
 ]
 
 # Alternative: Define specific configurations to test
 CUSTOM_CONFIGS = {
-    "svs_high_contrast": {
-        "base_config": "triton_490.yml",
-        "modifications": {
-            "ldci": {
-                "clip_limit": 5.0,
-                "wind": 128
-            },
-            "color_saturation_enhancement": {
-                "saturation_gain": 2.8
-            },
-            "digital_gain":{
-                "current_gain": 14
-            },
-            "hdr_durand":{
-                "contrast_factor": 1.9,
-                "downsample_factor": 4
-            },
-            "color_correction_matrix": {
-                "is_enable": True,
-                "corrected_red": [6.5, -0.2, -0.3],
-                "corrected_green": [-0.2, 6.7, -0.2],
-                "corrected_blue": [-0.1, -0.5, 6.0]
-            }
-        }
-    },
-    "svs_low_contrast": {
-        "base_config": "triton_490.yml",
-        "modifications": {
-            "ldci": {
-                "clip_limit": 0.5,
-                "wind": 128
-            },
-            "color_saturation_enhancement": {
-                "saturation_gain": 0.3
-            },
-            "digital_gain":{
-                "current_gain": 4
-            }
-        }
-    },
-    "svs_low_noise": {
-        "base_config": "triton_490.yml", 
-        "modifications": {
-            "bayer_noise_reduction": {
-                "r_std_dev_s": 1.2,
-                "g_std_dev_s": 1.2,
-                "b_std_dev_s": 1.2
-            },
-            "2d_noise_reduction": {
-                "is_enable": True,
-                "window_size": 11,
-                "patch_size": 7
-            }
-        }
-    },
-    "svs_sharp": {
-        "base_config": "triton_490.yml",
+    "sharpen_1": {
+        "base_config": "svs_cam.yml",
         "modifications": {
             "sharpen": {
-                "sharpen_strength": 3.0,
-                "sharpen_sigma": 5
-            }
+                "saturation_gain": 4.0
+            },
         }
-    },
-    "svs_awb_shift": {
-        "base_config": "triton_490.yml",
+        },
+        "sharpen_2": {
+        "base_config": "svs_cam.yml",
         "modifications": {
-            "color_correction_matrix": {
-                "is_enable": True,
-                "corrected_red": [1.5, -0.2, -0.3],
-                "corrected_green": [-0.2, 1.7, -0.2],
-                "corrected_blue": [-0.1, -0.5, 6.0]
-            }
+            "sharpen": {
+                "saturation_gain": 5.0
+            },
         }
-    },
-}
+        },
+        "sharpen_3": {
+        "base_config": "svs_cam.yml",
+        "modifications": {
+            "sharpen": {
+                "saturation_gain": 6.0
+            },
+        }
+        },
+        "sharpen_4": {
+        "base_config": "svs_cam.yml",
+        "modifications": {
+            "sharpen": {
+                "saturation_gain": 7.0
+            },
+        }
+        },
+        "sharpen_5": {
+        "base_config": "svs_cam.yml",
+        "modifications": {
+            "sharpen": {
+                "saturation_gain": 8.0
+            },
+        }
+        },
+        "sharpen_6": {
+        "base_config": "svs_cam.yml",
+        "modifications": {
+            "sharpen": {
+                "saturation_gain": 11.0
+            },
+        }
+        }
+    }
+
 
 def load_and_modify_config(base_config_path, modifications=None):
     """
@@ -162,7 +136,7 @@ def process_with_config(config_path, output_suffix=""):
         # Create output directory for this config
         config_name = Path(config_path).stem
         output_path = os.path.join(OUTPUT_BASE_PATH, config_name)
-        
+
         _log.info(f"\n{'='*60}")
         _log.info(f"Processing with config: {config_name}")
         _log.info(f"{'='*60}")
@@ -235,7 +209,7 @@ def process_multiple_configs():
             # Save temporary configuration
             temp_config_path = save_temp_config(config, config_name)
             temp_configs.append(temp_config_path)
-            
+
             # Process with modified configuration
             success = process_with_config(temp_config_path, f"_{config_name}")
             

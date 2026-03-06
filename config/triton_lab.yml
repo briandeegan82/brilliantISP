@@ -5,14 +5,14 @@ platform:
   render_3a: false
   # npy, png or both
   save_format: png
-  short_output_names: true  # compact filenames: {in_file}_{timestamp}.png
+  # short_output_names: true  # compact filenames: {in_file}_{timestamp}.png
   # skip_disabled_modules: true  # skip instantiating disabled modules (performance)
   # Global debug settings
   debug_enabled: true # Set to true to enable debug logging
   debug_log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   debug_log_file: null  # Set to filename to save logs to file (e.g., "isp_debug.log")
   # Histogram debug settings
-  plot_histograms: true  # Plot histograms of input (after decompanding) and output images
+  plot_histograms: false  # Plot histograms of input (after decompanding) and output images
   histogram_show_log: true  # Show log scale histograms in addition to linear
   histogram_show_channels: false  # For output RGB, show separate R/G/B histograms
 
@@ -22,10 +22,10 @@ sensor_info:
   hdr_bit_depth: 24
   bit_depth: 12
   pipeline_rgb_bit_depth: 16  # RGB stages (demosaic→CCM→CSC→YUV processing→RGB conversion→gamma)
-  width: 1920
-  height: 1536
+  width: 2880
+  height: 1860
   output_bit_depth: 8
-  sensor: "SVS"
+  sensor: "Triton_490"
   endian_type: "ieee-be"
   data_format: "uint32"
   embedded_rows_top: 0
@@ -34,7 +34,7 @@ sensor_info:
 
 # verified to match the SVS camera's companding curve
 companding:
-  is_enable: true
+  is_enable: false
   is_debug: false
   pedestal: 0
   companded: True
@@ -49,17 +49,17 @@ companding:
 crop:
   is_enable: false
   is_debug: false
-  crop_x_start: 1220
-  crop_y_start: 440
-  new_width: 300
-  new_height: 300
+  crop_x_start: 1
+  crop_y_start: 1
+  new_width: 1920
+  new_height: 1536
   is_save: false  
 
 dead_pixel_correction: 
   is_enable: true
   dp_threshold: 64
   is_debug: false
-  is_save: false
+  is_save: true
 
 black_level_correction:
   is_enable: true
@@ -82,13 +82,13 @@ oecf:
   is_save: false
 
 digital_gain:
-  is_debug: true
-  is_auto: false
+  is_debug: false
+  is_auto: true
   is_enable: true
   # Array of pre-define Gains
   gain_array: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
   # Index of default gain
-  current_gain: 10
+  current_gain: 7
   ae_feedback: 0
   is_save: false
 
@@ -97,14 +97,14 @@ lens_shading_correction:
   is_save: false
   # Radial polynomial: gain(r) = 1 + k1*r² + k2*r⁴; r=0 at center, 1 at corners
   # Increase k1/k2 to correct stronger vignetting (typical: k1 0.1-0.4, k2 0.05-0.2)
-  r_k1: 4.25
-  r_k2: 4.08
-  gr_k1: 4.12
-  gr_k2: 4.16
-  gb_k1: 4.12
-  gb_k2: 4.16
-  b_k1: 4.25
-  b_k2: 4.08
+  r_k1: 0.15
+  r_k2: 0.08
+  gr_k1: 0.12
+  gr_k2: 0.06
+  gb_k1: 0.12
+  gb_k2: 0.06
+  b_k1: 0.15
+  b_k2: 0.08
 
 bayer_noise_reduction:
   is_enable: true
@@ -137,27 +137,22 @@ white_balance:
 
 demosaic:
   is_save: false
-  # Algorithm selection:
-  # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
+  # Algorithm selection: "malvar", "bilinear"
   # - "malvar": Malvar-He-Cutler (default, high quality, slower)
-  # - "vng_opt": Variable Number of Gradients (high quality, slower)
-  # - "hamilton_adams": Hamilton Adams (high quality, slower)
-  # - "ppg": Pixel Pattern Gradient (high quality, slower)
-  # - "ahd": Adaptive Homogeneity-Directed (high quality, slower)
-  # - "lmmse": Least Mean Square Error (high quality, slower)
+  # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
   algorithm: "bilinear"
 
 color_correction_matrix:
   #Row sum to 1 convention
   is_enable: true
-  #corrected_red: [1.0, 0.0, 0.0] #[1.660, -0.527, -0.133]
-  #corrected_green: [0.0, 1.0, 0.0] #[-0.408, 1.563, -0.082]
-  #corrected_blue: [0.0, 0.0, 1.0] #[-0.055, -1.641, 2.695]
+  corrected_red: [1.0, 0.0, 0.0] #[1.660, -0.527, -0.133]
+  corrected_green: [0.0, 1.0, 0.0] #[-0.408, 1.563, -0.082]
+  corrected_blue: [0.0, 0.0, 1.0] #[-0.055, -1.641, 2.695]
   is_save: false
   # CCM from calib file
-  corrected_red: [  1.1604,   0.0462,  -0.2067]
-  corrected_green: [ -0.2355,   1.5297,  -0.2943]
-  corrected_blue: [  0.0594,  -0.3915,   1.3321]
+  #corrected_red: [  1.1604,   0.0462,  -0.2067]
+  #corrected_green: [ -0.2355,   1.5297,  -0.2943]
+  #corrected_blue: [  0.0594,  -0.3915,   1.3321]
 
 gamma_correction:
   is_enable: true
@@ -168,7 +163,7 @@ gamma_correction:
 auto_exposure:
   is_enable: true
   is_debug: false
-  center_illuminance: 0.4
+  center_illuminance: 4095
   histogram_skewness: 0.9
 
 color_space_conversion: 
@@ -188,9 +183,9 @@ ldci:
   is_save: false
 
 sharpen:
-  is_enable: true
-  sharpen_sigma: 3.0
-  sharpen_strength: 1.0
+  is_enable: false
+  sharpen_sigma: 5
+  sharpen_strength: 1
   is_save: false
 
 2d_noise_reduction:
@@ -223,77 +218,64 @@ yuv_conversion_format:
   conv_type: '444'
   is_save: false
   
-# tone_mapper -> config section: 
-#   durand->hdr_durand, aces->aces, 
-#   integer->integer_tmo, reinhard_integer->integer_tmo,
-#   aces_integer->aces_integer, hable->hable, hable_integer->hable_integer
+# tone_mapper -> config section: durand->hdr_durand, aces->aces, integer->integer_tmo,
+# aces_integer->aces_integer, hable->hable, hable_integer->hable_integer
 tone_mapping:
   is_enable: true
   tone_mapping_before_demosaic: yes
-  #tone_mapper: 'durand'            # Float, local (bilateral)
-  #tone_mapper: 'aces'              # Float, filmic
-  #tone_mapper: 'integer'           # Reinhard integer (legacy name)
-  #tone_mapper: 'reinhard_integer'   # Reinhard integer (recommended name)
-  #tone_mapper: 'aces_integer'      # Integer ACES via LUT
-  #tone_mapper: 'hable'             # Float Hable/Uncharted 2 filmic
-  tone_mapper: 'durand'     # Integer Hable filmic (LUT) - production-style
+  #tone_mapper: 'durand'        # Float, local (bilateral)
+  #tone_mapper: 'aces'          # Float, filmic
+  #tone_mapper: 'integer'       # Integer rational curve
+  #tone_mapper: 'aces_integer'  # Integer ACES via LUT
+  #tone_mapper: 'hable'         # Float Hable/Uncharted 2 filmic
+  tone_mapper: 'hable_integer'  # Integer Hable filmic (LUT) - production-style
   is_save: false
 
-# Reinhard global operator (integer implementation)
-# Based on Reinhard et al. 2002 "Photographic Tone Reproduction for Digital Images"
-reinhard_integer:
+# Integer-native tone mapping (production-style)
+integer_tmo:
   is_enable: true
-  is_plot_curve: true  # Set to true to plot and save the tone mapping curve
-  knee: 0.25      # Reinhard white point; larger = more highlight compression
-  strength: 1.5  # Modulates white point scaling
-  normalize_output: true  # Scale output to use full range (compensates for white point)
+  knee: 0.25      # White point; larger = more compression
+  strength: 1.0   # Curve strength
 
 # ACES integer/LUT tone mapping (production-style)
 aces_integer:
   is_enable: true
-  is_plot_curve: true  # Set to true to plot and save the tone mapping curve
-  exposure_adjustment: -2.0  # EV
+  exposure_adjustment: 0.0  # EV
   gamma: 2.4
   apply_odt_gamma: true
-  use_normalization: false   # Per-image min-max (matches float ACES, fixes washout)
-  normalize_output: false  # Scale output to use full range (compensates for LUT limits)
-  hdr_scale: 6.0        # Higher = more compression; 10.0 = very compressed
+  use_normalization: true   # Per-image min-max (matches float ACES, fixes washout)
+  hdr_scale: 1.0           # Lower = more compression; 1.0 = conservative
 
 # Durand: float, local TMO (used when tone_mapper: 'durand')
 hdr_durand:
   is_enable: true
   is_save: false
-  is_debug: true
-  is_plot_curve: true  # Set to true to plot and save the tone mapping curve
+  is_debug: false
   sigma_space: 8.0
   sigma_color: 8.0
-  contrast_factor: 2.0
+  contrast_factor: 1.5
   downsample_factor: 4
   
 # Hable (Uncharted 2) filmic tone mapping (float)
 hable:
-  is_enable: false
+  is_enable: true
   is_save: false
-  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
   exposure_bias: 2.0    # Exposure adjustment (higher = brighter)
   white_point: 11.2     # White point (Hable default)
 
 # Hable integer/LUT tone mapping (production-style)
 hable_integer:
   is_enable: true
-  is_plot_curve: true  # Set to true to plot and save the tone mapping curve
   exposure_bias: 4.0
   white_point: 11.2
-  use_normalization: true   # Per-image min-max
-  normalize_output: true   # Scale output to use full range (compensates for LUT limits)
+  use_normalization: true
   hdr_scale: 2.0       # Lower = more compression
 
 # ACES Tone Mapping Configuration
 aces:
-  is_enable: false
+  is_enable: true
   is_save: false
   is_debug: false
-  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
   # ACES variant: 'fitted' (faster, default) or 'full' (more accurate)
   variant: 'fitted'
   # Exposure adjustment in stops (0 = no adjustment)

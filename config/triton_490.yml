@@ -15,7 +15,7 @@ sensor_info:
   height: 1860
   output_bit_depth: 8
   sensor: "triton_490"
-  endian_type: "ieee-le"
+  endian_type: "ieee-be"
   data_format: "uint16"
   embedded_rows_top: 0
   embedded_rows_bottom: 0
@@ -23,10 +23,10 @@ sensor_info:
 
 # verified to match the SVS camera's companding curve
 companding:
-  is_enable: false
+  is_enable: true
   is_debug: false
   pedestal: 0
-  companded: false
+  companded: true
   companded_pin: [1, 256, 512, 831, 994, 1319, 1984, 2530, 2871, 2968, 3258, 3541, 3855]
   companded_pout: [1, 256, 1024, 3900, 7800, 23400, 87315, 174630, 349260, 548241, 1736000, 5208000, 16777200] #, 16777200]
   #input_range: 65535
@@ -73,7 +73,7 @@ oecf:
 digital_gain:
   is_debug: true
   is_auto: false
-  is_enable: true
+  is_enable: false
   # Array of pre-define Gains
   gain_array: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
   # Index of default gain
@@ -146,20 +146,10 @@ gamma_correction:
   gamma: 2.2
 
 auto_exposure:
-  is_enable: true
+  is_enable: false
   is_debug: false
   center_illuminance: 4095
   histogram_skewness: 0.9
-
-# Example usage in ISP pipeline
-hdr_durand:
-  is_enable: true
-  is_save: True
-  is_debug: false
-  sigma_space: 8.0
-  sigma_color: 8.0
-  contrast_factor: 1.5
-  downsample_factor: 4
 
 
 color_space_conversion: 
@@ -173,7 +163,7 @@ color_saturation_enhancement:
   saturation_gain: 1.8
 
 ldci:
-  is_enable: true
+  is_enable: false
   clip_limit: 2.0
   wind: 128
   is_save: false
@@ -219,6 +209,69 @@ tone_mapping:
   # The conversion wont run if csc is false
   is_enable: true
   tone_mapping_before_demosaic: yes
-  tone_mapper: 'durand'
+  tone_mapper: 'reinhard_integer'  # Reinhard integer tone mapper
   is_save: false
+
+# Reinhard global operator (integer implementation)
+# Based on Reinhard et al. 2002 "Photographic Tone Reproduction for Digital Images"
+integer_tmo:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  knee: 0.25      # Reinhard white point; larger = more highlight compression
+  strength: 1.0   # Modulates white point scaling
+  normalize_output: false  # Scale output to use full range (compensates for white point)
+
+# ACES integer/LUT tone mapping (production-style)
+aces_integer:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_adjustment: 0.0  # EV
+  gamma: 2.4
+  apply_odt_gamma: true
+  use_normalization: true   # Per-image min-max (matches float ACES, fixes washout)
+  normalize_output: false   # Scale output to use full range (compensates for LUT limits)
+  hdr_scale: 1.0           # Lower = more compression; 1.0 = conservative
+
+# Durand: float, local TMO (used when tone_mapper: 'durand')
+hdr_durand:
+  is_enable: true
+  is_save: false
+  is_debug: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  sigma_space: 8.0
+  sigma_color: 8.0
+  contrast_factor: 1.5
+  downsample_factor: 4
+  
+# Hable (Uncharted 2) filmic tone mapping (float)
+hable:
+  is_enable: true
+  is_save: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_bias: 2.0    # Exposure adjustment (higher = brighter)
+  white_point: 11.2     # White point (Hable default)
+
+# Hable integer/LUT tone mapping (production-style)
+hable_integer:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_bias: 4.0
+  white_point: 11.2
+  use_normalization: true   # Per-image min-max
+  normalize_output: false   # Scale output to use full range (compensates for LUT limits)
+  hdr_scale: 2.0       # Lower = more compression
+
+# ACES Tone Mapping Configuration
+aces:
+  is_enable: true
+  is_save: false
+  is_debug: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  # ACES variant: 'fitted' (faster, default) or 'full' (more accurate)
+  variant: 'fitted'
+  # Exposure adjustment in stops (0 = no adjustment)
+  exposure_adjustment: 0.0
+  # Output transform: 'sRGB' or 'Rec709'
+  output_transform: 'sRGB'
+
 

@@ -1,6 +1,8 @@
 # BrilliantISP / HDR-ISP
 
-This project is based on infiniteISP by 10xEngineers, which in turn is based on FastOpenISP and OpenISP. Standing on the shoulders of giants.
+This project is a derivative work based on [Infinite-ISP](https://github.com/10x-Engineers/Infinite-ISP) by 10xEngineers, which in turn is based on FastOpenISP and OpenISP. Standing on the shoulders of giants.
+
+**License**: Apache License 2.0 (see LICENSE and NOTICE files)
 
 ## Features
 
@@ -38,7 +40,37 @@ See `config/svs_cam.yml` for a full example. Key sections:
 
 
 ## Acknowledgments
-- This project is a continuation of the work by cruxopen, fast-openISP, and infiniteISP, to name but a few.
+
+This project is a derivative work licensed under Apache License 2.0.
+
+**Original Work**: [Infinite-ISP](https://github.com/10x-Engineers/Infinite-ISP) by 10xEngineers  
+**Copyright**: 2024, 10xEngineers  
+**License**: Apache License 2.0
+
+This derivative work includes significant modifications and enhancements (see NOTICE file for details).
+
+Additional acknowledgments:
+- cruxopen for the original openISP
+- fast-openISP contributors
+- Various academic researchers (cited in code and documentation)
+
+## License
+
+Copyright 2026, Brian Deegan
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+See the NOTICE file for additional attribution requirements.
 
 ## List of Open Source ISPs
 - [infiniteISP](https://github.com/10x-Engineers/Infinite-ISP/tree/main)

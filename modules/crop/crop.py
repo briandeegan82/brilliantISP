@@ -30,6 +30,8 @@ class Crop:
         self.sensor_info = sensor_info
         self.old_size = (sensor_info["height"], sensor_info["width"])
         self.new_size = (parm_cro["new_height"], parm_cro["new_width"])
+        self.x_start = parm_cro.get("crop_x_start", 0)
+        self.y_start = parm_cro.get("crop_y_start", 0)
         self.enable = parm_cro["is_enable"]
         self.is_debug = parm_cro["is_debug"]
         self.is_save = parm_cro["is_save"]
@@ -87,17 +89,34 @@ class Crop:
             self.logger.warning("   - Make sure output size is smaller than input size!")
             return self.img
 
-        crop_rows = self.old_size[0] - self.new_size[0]
-        crop_cols = self.old_size[1] - self.new_size[1]
-        cropped_img = np.empty(
-            (self.new_size[0], self.new_size[1]), dtype=self.img.dtype
-        )
+        # Validate crop region
+        if self.x_start + self.new_size[1] > self.old_size[1]:
+            self.logger.warning(f"   - Invalid crop_x_start ({self.x_start}): region extends beyond image width")
+            self.logger.warning(f"   - Adjusting to fit within image bounds")
+            self.x_start = max(0, self.old_size[1] - self.new_size[1])
+        
+        if self.y_start + self.new_size[0] > self.old_size[0]:
+            self.logger.warning(f"   - Invalid crop_y_start ({self.y_start}): region extends beyond image height")
+            self.logger.warning(f"   - Adjusting to fit within image bounds")
+            self.y_start = max(0, self.old_size[0] - self.new_size[0])
 
-        cropped_img = self.crop(self.img, crop_rows, crop_cols)
+        # Ensure Bayer pattern alignment
+        if self.x_start % 2 != 0:
+            self.logger.warning(f"   - crop_x_start ({self.x_start}) is odd, adjusting to even for Bayer alignment")
+            self.x_start = (self.x_start // 2) * 2
+        
+        if self.y_start % 2 != 0:
+            self.logger.warning(f"   - crop_y_start ({self.y_start}) is odd, adjusting to even for Bayer alignment")
+            self.y_start = (self.y_start // 2) * 2
+
+        # Extract the region from (y_start, x_start) with size (new_height, new_width)
+        cropped_img = self.img[
+            self.y_start : self.y_start + self.new_size[0],
+            self.x_start : self.x_start + self.new_size[1]
+        ]
 
         if self.is_debug:
-            self.logger.info(f"   - Number of rows cropped = {crop_rows}")
-            self.logger.info(f"   - Number of columns cropped = {crop_cols}")
+            self.logger.info(f"   - Crop region: x={self.x_start}, y={self.y_start}, width={self.new_size[1]}, height={self.new_size[0]}")
             self.logger.info(f"   - Shape of cropped image = {cropped_img.shape}")
         return cropped_img
 

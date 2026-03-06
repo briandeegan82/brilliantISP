@@ -7,12 +7,13 @@ Input: Linear data from decompanding (before demosaic) or CCM (after demosaic).
 Output: uint16 for pipeline (gamma expects 16-bit input).
 
 Supported tone_mapper values and their config sections:
-  durand         -> hdr_durand
-  aces           -> aces
-  integer        -> integer_tmo
-  aces_integer   -> aces_integer
-  hable          -> hable
-  hable_integer  -> hable_integer
+  durand            -> hdr_durand
+  aces              -> aces
+  integer           -> integer_tmo (Reinhard, legacy name)
+  reinhard_integer  -> integer_tmo (Reinhard, recommended name)
+  aces_integer      -> aces_integer
+  hable             -> hable
+  hable_integer     -> hable_integer
 """
 from util.utils import save_output_array
 import numpy as np
@@ -63,6 +64,15 @@ class ToneMapping:
                 L_int = self._extract_luminance_int()
                 self.hdr = IntegerToneMapping(L_int, self.platform, self.sensor_info, param_int)
             self._use_integer_tmo = True
+        elif self.method == "reinhard_integer":
+            from modules.tone_mapping.integer_tmo.integer_tone_mapping import IntegerReinhardToneMapping
+            param_int = getattr(pipeline_self, "param_integer_tmo", {})
+            if self.tone_mapping_before_demosaic:
+                self.hdr = IntegerReinhardToneMapping(self.img_orig, self.platform, self.sensor_info, param_int)
+            else:
+                L_int = self._extract_luminance_int()
+                self.hdr = IntegerReinhardToneMapping(L_int, self.platform, self.sensor_info, param_int)
+            self._use_integer_tmo = True
         elif self.method == "aces_integer":
             from modules.tone_mapping.integer_tmo.aces_integer_tone_mapping import ACESIntegerToneMapping
             param_aces_int = getattr(pipeline_self, "param_aces_integer", {})
@@ -88,7 +98,7 @@ class ToneMapping:
         else:
             raise ValueError(
                 f"Unknown tone mapping method: {self.method}. "
-                "Supported: 'durand', 'aces', 'integer', 'aces_integer', 'hable', 'hable_integer'."
+                "Supported: 'durand', 'aces', 'integer', 'reinhard_integer', 'aces_integer', 'hable', 'hable_integer'."
             )
         self._use_integer_tmo = getattr(self, "_use_integer_tmo", False)
     
