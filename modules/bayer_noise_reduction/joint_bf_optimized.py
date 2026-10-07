@@ -6,6 +6,7 @@ https://www.researchgate.net/publication/261753644_Green_Channel_Guiding_Denoisi
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import warnings
 import numpy as np
@@ -17,25 +18,22 @@ from util.isp_types import BayerNoiseReductionConfig, PlatformConfig, RawBayerIm
 
 # Import GPU utilities with fallback
 try:
-    from util.gpu_utils import (
-        is_gpu_available, should_use_gpu, gpu_filter2d, 
-        gpu_gaussian_blur, to_umat, from_umat
-    )
+    from util.gpu_utils import is_gpu_available, should_use_gpu, gpu_filter2d, gpu_gaussian_blur, to_umat, from_umat
+
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
+
     # Fallback functions for CPU-only systems
     def is_gpu_available() -> bool:
         return False
-    
+
     def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
         return False
-    
-    def gpu_filter2d(
-        img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True
-    ) -> np.ndarray:
+
+    def gpu_filter2d(img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return cv2.filter2D(img, -1, kernel)
-    
+
     def gpu_gaussian_blur(
         img: np.ndarray,
         ksize: tuple[int, int],
@@ -44,10 +42,10 @@ except ImportError:
         use_gpu: bool = True,
     ) -> np.ndarray:
         return cv2.GaussianBlur(img, ksize, sigma_x, sigmaY=sigma_y)
-    
+
     def to_umat(img: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return img
-    
+
     def from_umat(umat_or_array: np.ndarray) -> np.ndarray:
         return umat_or_array
 
@@ -73,11 +71,10 @@ class JointBFOptimized:
         self.is_leave = platform["leave_pbar_string"]
         self.is_save = parm_bnr["is_save"]
         self.platform = platform
-        
+
         # Check if GPU acceleration should be used
-        self.use_gpu = (is_gpu_available() and 
-                       should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
-        
+        self.use_gpu = is_gpu_available() and should_use_gpu((sensor_info["height"], sensor_info["width"]), "filter2d")
+
         self._log = logging.getLogger(__name__)
         if self.use_gpu:
             self._log.info("  Using GPU acceleration for Bayer Noise Reduction")
@@ -98,9 +95,13 @@ class JointBFOptimized:
         Optimized joint bilateral filter using NumPy broadcast operations
         """
         if self.use_gpu and GPU_UTILS_AVAILABLE:
-            return self.optimized_joint_bilateral_filter_gpu(in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride)
+            return self.optimized_joint_bilateral_filter_gpu(
+                in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride
+            )
         else:
-            return self.optimized_joint_bilateral_filter_cpu(in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride)
+            return self.optimized_joint_bilateral_filter_cpu(
+                in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride
+            )
 
     def optimized_joint_bilateral_filter_cpu(
         self,
@@ -136,7 +137,7 @@ class JointBFOptimized:
 
         # Create Gaussian kernel
         s_kern = self.gauss_kern_raw(spatial_kern, stddev_s, stride)
-        
+
         # Pad images
         pad_len = int((spatial_kern - 1) / 2)
         in_img_ext = np.pad(in_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect")
@@ -152,26 +153,24 @@ class JointBFOptimized:
         for i in range(spatial_kern):
             for j in range(spatial_kern):
                 # Extract shifted arrays
-                in_img_shifted = in_img_ext[i:i + in_img.shape[0], j:j + in_img.shape[1]]
-                guide_img_shifted = guide_img_ext[i:i + in_img.shape[0], j:j + in_img.shape[1]]
-                
+                in_img_shifted = in_img_ext[i : i + in_img.shape[0], j : j + in_img.shape[1]]
+                guide_img_shifted = guide_img_ext[i : i + in_img.shape[0], j : j + in_img.shape[1]]
+
                 # Calculate range weights using EXACT same formula as original
                 # Original: -1 * (guide_img - guide_img_ext_array) ** 2 / (2 * stddev_r**2)
-                range_weights = np.exp(
-                    -1 * (guide_img - guide_img_shifted) ** 2 / (2 * stddev_r**2)
-                )
-                
+                range_weights = np.exp(-1 * (guide_img - guide_img_shifted) ** 2 / (2 * stddev_r**2))
+
                 # Apply spatial kernel weight
                 spatial_weight = s_kern[i, j]
                 total_weights = spatial_weight * range_weights
-                
+
                 # Accumulate results using broadcast
                 norm_fact += total_weights
                 sum_filt_out += total_weights * in_img_shifted
 
         # Final result - use same division as original (no epsilon)
         filt_out = sum_filt_out / norm_fact
-        
+
         return filt_out
 
     def optimized_joint_bilateral_filter_gpu(
@@ -191,27 +190,29 @@ class JointBFOptimized:
             # Convert to GPU
             gpu_in_img = to_umat(in_img, use_gpu=True)
             gpu_guide_img = to_umat(guide_img, use_gpu=True)
-            
+
             # Create spatial kernel
             spatial_kernel = self.create_gaussian_kernel(spatial_kern, stddev_s)
             gpu_spatial_kernel = to_umat(spatial_kernel, use_gpu=True)
-            
+
             # Apply spatial filtering using GPU
             gpu_spatial_filtered = gpu_filter2d(gpu_in_img, gpu_spatial_kernel, use_gpu=True)
             gpu_guide_spatial = gpu_filter2d(gpu_guide_img, gpu_spatial_kernel, use_gpu=True)
-            
+
             # Convert back to CPU for range filtering (more complex operations)
             spatial_filtered = from_umat(gpu_spatial_filtered)
             guide_spatial = from_umat(gpu_guide_spatial)
-            
+
             # Apply range filtering on CPU (more efficient for this operation)
             result = self.apply_range_filter_optimized(spatial_filtered, guide_spatial, range_kern, stddev_r)
-            
+
             return result
-            
+
         except Exception as e:
             self._log.warning(f"  GPU bilateral filter failed, falling back to CPU: {e}")
-            return self.optimized_joint_bilateral_filter_cpu(in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride)
+            return self.optimized_joint_bilateral_filter_cpu(
+                in_img, guide_img, spatial_kern, stddev_s, range_kern, stddev_r, stride
+            )
 
     def apply_range_filter_optimized(
         self,
@@ -225,10 +226,10 @@ class JointBFOptimized:
         """
         # Create range kernel
         range_kernel = self.create_gaussian_kernel(range_kern, stddev_r)
-        
+
         # Apply range filtering using convolution
         result = ndimage.convolve(spatial_filtered, range_kernel, mode="reflect")
-        
+
         return result
 
     def create_gaussian_kernel(self, size: int, sigma: float) -> np.ndarray:
@@ -237,33 +238,31 @@ class JointBFOptimized:
         """
         if size % 2 == 0:
             size += 1
-        
+
         kernel = np.zeros((size, size), dtype=np.float32)
         center = size // 2
-        
+
         # OPTIMIZATION: Use NumPy meshgrid for vectorized kernel creation
         y, x = np.ogrid[:size, :size]
-        kernel = np.exp(-((x - center)**2 + (y - center)**2) / (2 * sigma**2))
-        
+        kernel = np.exp(-((x - center) ** 2 + (y - center) ** 2) / (2 * sigma**2))
+
         return kernel / np.sum(kernel)
 
-    def gauss_kern_raw(
-        self, kern_size: int, sigma: float, stride: int
-    ) -> np.ndarray:
+    def gauss_kern_raw(self, kern_size: int, sigma: float, stride: int) -> np.ndarray:
         """
         Create Gaussian kernel (original method for compatibility)
         """
         if kern_size % 2 == 0:
             kern_size += 1
-        
+
         kernel = np.zeros((kern_size, kern_size), dtype=np.float32)
         center = kern_size // 2
-        
+
         for i in range(kern_size):
             for j in range(kern_size):
                 x, y = i - center, j - center
                 kernel[i, j] = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-        
+
         return kernel / np.sum(kernel)
 
     def apply_jbf(self) -> RawBayerImage:
@@ -295,12 +294,8 @@ class JointBFOptimized:
 
         # Initialize arrays
         interp_g = np.zeros((height, width), dtype=np.float32)
-        in_img_r = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
-        in_img_b = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
+        in_img_r = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
+        in_img_b = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
 
         # Convert bayer image into sub-images for filtering each colour channel
         in_img_raw = in_img.copy()
@@ -352,12 +347,8 @@ class JointBFOptimized:
 
         # Extract interpolated green channels
         interp_g = in_img.copy()
-        interp_g_at_r = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
-        interp_g_at_b = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
+        interp_g_at_r = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
+        interp_g_at_b = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
 
         if bayer_pattern == "rggb":
             interp_g[0:height:2, 0:width:2] = kern_filt_g_at_r[0:height:2, 0:width:2]

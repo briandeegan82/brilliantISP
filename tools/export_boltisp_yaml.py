@@ -33,7 +33,6 @@ from typing import Any
 
 import yaml
 
-
 TONE_MAPPER_TO_OPERATOR = {
     "durand": "durand",
     "aces": "aces",
@@ -105,10 +104,10 @@ def _apply_lsc_table_generation(
         return
 
     channels = [
-        ("r",  "r_k1",  "r_k2",  "r_table"),
+        ("r", "r_k1", "r_k2", "r_table"),
         ("gr", "gr_k1", "gr_k2", "gr_table"),
         ("gb", "gb_k1", "gb_k2", "gb_table"),
-        ("b",  "b_k1",  "b_k2",  "b_table"),
+        ("b", "b_k1", "b_k2", "b_table"),
     ]
 
     any_generated = False
@@ -219,9 +218,7 @@ def export_bolt_yaml(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Convert brilliantISP YAML into boltISP-compatible YAML."
-    )
+    parser = argparse.ArgumentParser(description="Convert brilliantISP YAML into boltISP-compatible YAML.")
     parser.add_argument(
         "--input",
         required=True,

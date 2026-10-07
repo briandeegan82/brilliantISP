@@ -5,6 +5,7 @@ Code / Paper  Reference: https://www.ipol.im/pub/art/2011/g_mhcd/article.pdf
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import numpy as np
 from scipy.signal import correlate2d
@@ -14,6 +15,7 @@ from util.isp_types import DemosaicMasks, RawBayerImage
 # Try to import CuPy, fall back to CPU if not available
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
@@ -29,7 +31,7 @@ class MalvarCuPy:
         self.img = raw_in
         self.masks = masks
         self.use_gpu = CUPY_AVAILABLE and self._should_use_gpu()
-        
+
         self._log = logging.getLogger(__name__)
         if self.use_gpu:
             self._log.info("  Using CuPy-accelerated Malvar-He-Cutler demosaicing")
@@ -40,7 +42,7 @@ class MalvarCuPy:
         """Determine if GPU acceleration should be used based on image size."""
         if not CUPY_AVAILABLE:
             return False
-        
+
         # Use GPU for images larger than 1MP
         image_size = self.img.shape[0] * self.img.shape[1]
         return image_size > 1000000  # 1MP threshold
@@ -122,53 +124,27 @@ class MalvarCuPy:
         )
 
         # Applying other linear filters
-        rb_at_g_rbbr = correlate2d(
-            raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm"
-        )
-        rb_at_g_brrb = correlate2d(
-            raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm"
-        )
-        rb_at_gr_bbrr = correlate2d(
-            raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm"
-        )
+        rb_at_g_rbbr = correlate2d(raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm")
+        rb_at_g_brrb = correlate2d(raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm")
+        rb_at_gr_bbrr = correlate2d(raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm")
 
         # Extract row and column masks
-        r_rows = np.transpose(np.any(mask_r == 1, axis=1)[np.newaxis]) * np.ones(
-            r_channel.shape, dtype=np.float32
-        )
-        r_col = np.any(mask_r == 1, axis=0)[np.newaxis] * np.ones(
-            r_channel.shape, dtype=np.float32
-        )
-        b_rows = np.transpose(np.any(mask_b == 1, axis=1)[np.newaxis]) * np.ones(
-            b_channel.shape, dtype=np.float32
-        )
-        b_col = np.any(mask_b == 1, axis=0)[np.newaxis] * np.ones(
-            b_channel.shape, dtype=np.float32
-        )
+        r_rows = np.transpose(np.any(mask_r == 1, axis=1)[np.newaxis]) * np.ones(r_channel.shape, dtype=np.float32)
+        r_col = np.any(mask_r == 1, axis=0)[np.newaxis] * np.ones(r_channel.shape, dtype=np.float32)
+        b_rows = np.transpose(np.any(mask_b == 1, axis=1)[np.newaxis]) * np.ones(b_channel.shape, dtype=np.float32)
+        b_col = np.any(mask_b == 1, axis=0)[np.newaxis] * np.ones(b_channel.shape, dtype=np.float32)
 
         # Update R channel
-        r_channel = np.where(
-            np.logical_and(r_rows == 1, b_col == 1), rb_at_g_rbbr, r_channel
-        )
-        r_channel = np.where(
-            np.logical_and(b_rows == 1, r_col == 1), rb_at_g_brrb, r_channel
-        )
+        r_channel = np.where(np.logical_and(r_rows == 1, b_col == 1), rb_at_g_rbbr, r_channel)
+        r_channel = np.where(np.logical_and(b_rows == 1, r_col == 1), rb_at_g_brrb, r_channel)
 
         # Update B channel
-        b_channel = np.where(
-            np.logical_and(b_rows == 1, r_col == 1), rb_at_g_rbbr, b_channel
-        )
-        b_channel = np.where(
-            np.logical_and(r_rows == 1, b_col == 1), rb_at_g_brrb, b_channel
-        )
+        b_channel = np.where(np.logical_and(b_rows == 1, r_col == 1), rb_at_g_rbbr, b_channel)
+        b_channel = np.where(np.logical_and(r_rows == 1, b_col == 1), rb_at_g_brrb, b_channel)
 
         # Final updates
-        r_channel = np.where(
-            np.logical_and(b_rows == 1, b_col == 1), rb_at_gr_bbrr, r_channel
-        )
-        b_channel = np.where(
-            np.logical_and(r_rows == 1, r_col == 1), rb_at_gr_bbrr, b_channel
-        )
+        r_channel = np.where(np.logical_and(b_rows == 1, b_col == 1), rb_at_gr_bbrr, r_channel)
+        b_channel = np.where(np.logical_and(r_rows == 1, r_col == 1), rb_at_gr_bbrr, b_channel)
 
         demos_out[:, :, 0] = r_channel
         demos_out[:, :, 1] = g_channel
@@ -189,24 +165,18 @@ class MalvarCuPy:
             # Use CPU for convolutions (avoid compilation issues)
             # Creating g_channel channel first after applying g_at_r_and_b filter
             g_filtered = correlate2d(raw_in, g_at_r_and_b, mode="same", boundary="symm")
-            
+
             # Applying other linear filters
-            rb_at_g_rbbr = correlate2d(
-                raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm"
-            )
-            rb_at_g_brrb = correlate2d(
-                raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm"
-            )
-            rb_at_gr_bbrr = correlate2d(
-                raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm"
-            )
+            rb_at_g_rbbr = correlate2d(raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm")
+            rb_at_g_brrb = correlate2d(raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm")
+            rb_at_gr_bbrr = correlate2d(raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm")
 
             # Move data to GPU for vectorized operations
             raw_in_gpu = cp.asarray(raw_in)
             mask_r_gpu = cp.asarray(mask_r)
             mask_g_gpu = cp.asarray(mask_g)
             mask_b_gpu = cp.asarray(mask_b)
-            
+
             g_filtered_gpu = cp.asarray(g_filtered)
             rb_at_g_rbbr_gpu = cp.asarray(rb_at_g_rbbr)
             rb_at_g_brrb_gpu = cp.asarray(rb_at_g_brrb)
@@ -231,39 +201,23 @@ class MalvarCuPy:
             r_rows_gpu = cp.transpose(cp.any(mask_r_gpu == 1, axis=1)[cp.newaxis]) * cp.ones(
                 r_channel_gpu.shape, dtype=cp.float32
             )
-            r_col_gpu = cp.any(mask_r_gpu == 1, axis=0)[cp.newaxis] * cp.ones(
-                r_channel_gpu.shape, dtype=cp.float32
-            )
+            r_col_gpu = cp.any(mask_r_gpu == 1, axis=0)[cp.newaxis] * cp.ones(r_channel_gpu.shape, dtype=cp.float32)
             b_rows_gpu = cp.transpose(cp.any(mask_b_gpu == 1, axis=1)[cp.newaxis]) * cp.ones(
                 b_channel_gpu.shape, dtype=cp.float32
             )
-            b_col_gpu = cp.any(mask_b_gpu == 1, axis=0)[cp.newaxis] * cp.ones(
-                b_channel_gpu.shape, dtype=cp.float32
-            )
+            b_col_gpu = cp.any(mask_b_gpu == 1, axis=0)[cp.newaxis] * cp.ones(b_channel_gpu.shape, dtype=cp.float32)
 
             # Update R channel
-            r_channel_gpu = cp.where(
-                cp.logical_and(r_rows_gpu == 1, b_col_gpu == 1), rb_at_g_rbbr_gpu, r_channel_gpu
-            )
-            r_channel_gpu = cp.where(
-                cp.logical_and(b_rows_gpu == 1, r_col_gpu == 1), rb_at_g_brrb_gpu, r_channel_gpu
-            )
+            r_channel_gpu = cp.where(cp.logical_and(r_rows_gpu == 1, b_col_gpu == 1), rb_at_g_rbbr_gpu, r_channel_gpu)
+            r_channel_gpu = cp.where(cp.logical_and(b_rows_gpu == 1, r_col_gpu == 1), rb_at_g_brrb_gpu, r_channel_gpu)
 
             # Update B channel
-            b_channel_gpu = cp.where(
-                cp.logical_and(b_rows_gpu == 1, r_col_gpu == 1), rb_at_g_rbbr_gpu, b_channel_gpu
-            )
-            b_channel_gpu = cp.where(
-                cp.logical_and(r_rows_gpu == 1, b_col_gpu == 1), rb_at_g_brrb_gpu, b_channel_gpu
-            )
+            b_channel_gpu = cp.where(cp.logical_and(b_rows_gpu == 1, r_col_gpu == 1), rb_at_g_rbbr_gpu, b_channel_gpu)
+            b_channel_gpu = cp.where(cp.logical_and(r_rows_gpu == 1, b_col_gpu == 1), rb_at_g_brrb_gpu, b_channel_gpu)
 
             # Final updates
-            r_channel_gpu = cp.where(
-                cp.logical_and(b_rows_gpu == 1, b_col_gpu == 1), rb_at_gr_bbrr_gpu, r_channel_gpu
-            )
-            b_channel_gpu = cp.where(
-                cp.logical_and(r_rows_gpu == 1, r_col_gpu == 1), rb_at_gr_bbrr_gpu, b_channel_gpu
-            )
+            r_channel_gpu = cp.where(cp.logical_and(b_rows_gpu == 1, b_col_gpu == 1), rb_at_gr_bbrr_gpu, r_channel_gpu)
+            b_channel_gpu = cp.where(cp.logical_and(r_rows_gpu == 1, r_col_gpu == 1), rb_at_gr_bbrr_gpu, b_channel_gpu)
 
             demos_out_gpu[:, :, 0] = r_channel_gpu
             demos_out_gpu[:, :, 1] = g_channel_gpu

@@ -10,6 +10,7 @@ Fast Open ISP Author: Qiu Jueqin (qiujueqin@gmail.com)
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import math
 from typing import Any, cast
 import numpy as np
@@ -49,21 +50,15 @@ class CLAHE:
         """
         if isinstance(pads, (list, tuple, np.ndarray)):
             if len(pads) == 2:
-                pads = ((pads[0], pads[0]), (pads[1], pads[1])) + ((0, 0),) * (
-                    array.ndim - 2
-                )
+                pads = ((pads[0], pads[0]), (pads[1], pads[1])) + ((0, 0),) * (array.ndim - 2)
             elif len(pads) == 4:
-                pads = ((pads[0], pads[1]), (pads[2], pads[3])) + ((0, 0),) * (
-                    array.ndim - 2
-                )
+                pads = ((pads[0], pads[1]), (pads[2], pads[3])) + ((0, 0),) * (array.ndim - 2)
             else:
                 raise NotImplementedError
 
         return np.pad(array, cast(Any, pads), mode=cast(Any, mode))
 
-    def crop(
-        self, array: np.ndarray, crops: int | tuple[int, ...] | list[int] | np.ndarray
-    ) -> np.ndarray:
+    def crop(self, array: np.ndarray, crops: int | tuple[int, ...] | list[int] | np.ndarray) -> np.ndarray:
         """
         Crop an array within the given margins
         """
@@ -79,9 +74,7 @@ class CLAHE:
             top_crop = bottom_crop = left_crop = right_crop = crops
 
         height, width = array.shape[:2]
-        return array[
-            top_crop : height - bottom_crop, left_crop : width - right_crop, ...
-        ]
+        return array[top_crop : height - bottom_crop, left_crop : width - right_crop, ...]
 
     def get_tile_lut(self, tiled_array: np.ndarray) -> np.ndarray:
         """
@@ -164,20 +157,15 @@ class CLAHE:
         Interpolating blocks present in the middle of the arrays
         """
         interp_top_blocks = self.interp_blocks(left_lut_weights, block, tl_lut, top_lut)
-        interp_current_blocks = self.interp_blocks(
-            left_lut_weights, block, left_lut, current_lut
-        )
+        interp_current_blocks = self.interp_blocks(left_lut_weights, block, left_lut, current_lut)
 
         interp_final = np.right_shift(
-            top_lut_weights * interp_top_blocks
-            + (1024 - top_lut_weights) * interp_current_blocks,
+            top_lut_weights * interp_top_blocks + (1024 - top_lut_weights) * interp_current_blocks,
             10,
         ).astype(np.uint8)
         return interp_final
 
-    def is_corner_block(
-        self, x_tiles: int, y_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_corner_block(self, x_tiles: int, y_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Checking if the current image block is locating in a corner region
         """
@@ -188,25 +176,17 @@ class CLAHE:
             or (i_row == y_tiles and i_col == x_tiles)
         )
 
-    def is_top_or_bottom_block(
-        self, x_tiles: int, y_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_top_or_bottom_block(self, x_tiles: int, y_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Checking if the current image block is locating in teh top or bottom region
         """
-        return (i_row == 0 or i_row == y_tiles) and not self.is_corner_block(
-            x_tiles, y_tiles, i_col, i_row
-        )
+        return (i_row == 0 or i_row == y_tiles) and not self.is_corner_block(x_tiles, y_tiles, i_col, i_row)
 
-    def is_left_or_right_block(
-        self, x_tiles: int, y_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_left_or_right_block(self, x_tiles: int, y_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Checking if the current image block is locating in the left or right region
         """
-        return (i_col == 0 or i_col == x_tiles) and not self.is_corner_block(
-            x_tiles, y_tiles, i_col, i_row
-        )
+        return (i_col == 0 or i_col == x_tiles) and not self.is_corner_block(x_tiles, y_tiles, i_col, i_row)
 
     def apply_clahe(self) -> np.ndarray:
         """
@@ -245,12 +225,8 @@ class CLAHE:
         )
 
         # Assigning linearized LUT weights to top and left blocks
-        left_lut_weights = np.linspace(1024, 0, tile_width, dtype=np.int32).reshape(
-            (1, -1)
-        )
-        top_lut_weights = np.linspace(1024, 0, tile_height, dtype=np.int32).reshape(
-            (-1, 1)
-        )
+        left_lut_weights = np.linspace(1024, 0, tile_width, dtype=np.int32).reshape((1, -1))
+        top_lut_weights = np.linspace(1024, 0, tile_height, dtype=np.int32).reshape((-1, 1))
 
         # Declaring an empty 3D (x,y,z) array of LUTs for each tile, where x,y are
         # the coordinates of the tile and z a linear array of 256
@@ -290,11 +266,7 @@ class CLAHE:
                 start_col_index = max(start_col_index, 0)
 
                 # Extracting the tile for processing
-                y_block = (
-                    y_padded[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ]
-                ).astype(
+                y_block = (y_padded[start_row_index:end_row_index, start_col_index:end_col_index]).astype(
                     np.uint8
                 )  # tile/block
 
@@ -305,9 +277,7 @@ class CLAHE:
                     lut_y_idx = 0 if i_row == 0 else vert_tiles - 1
                     lut_x_idx = 0 if i_col == 0 else horiz_tiles - 1
                     lut = luts[lut_y_idx, lut_x_idx]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (lut[y_block]).astype(np.float32)
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (lut[y_block]).astype(np.float32)
 
                 elif self.is_top_or_bottom_block(horiz_tiles, vert_tiles, i_col, i_row):
                     # if the block is present at the top or bottom region,
@@ -315,17 +285,9 @@ class CLAHE:
                     lut_y_idx = 0 if i_row == 0 else vert_tiles - 1
                     left_lut = luts[lut_y_idx, i_col - 1]
                     current_lut = luts[lut_y_idx, i_col]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
-                        (
-                            self.interp_top_bottom_block(
-                                left_lut_weights, y_block, left_lut, current_lut
-                            )
-                        )
-                    ).astype(
-                        np.float32
-                    )
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
+                        (self.interp_top_bottom_block(left_lut_weights, y_block, left_lut, current_lut))
+                    ).astype(np.float32)
 
                 elif self.is_left_or_right_block(horiz_tiles, vert_tiles, i_col, i_row):
                     # if the block is present at the left or right region, current block is
@@ -333,17 +295,9 @@ class CLAHE:
                     lut_x_idx = 0 if i_col == 0 else horiz_tiles - 1
                     top_lut = luts[i_row - 1, lut_x_idx]
                     current_lut = luts[i_row, lut_x_idx]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
-                        (
-                            self.interp_left_right_block(
-                                top_lut_weights, y_block, top_lut, current_lut
-                            )
-                        )
-                    ).astype(
-                        np.float32
-                    )
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
+                        (self.interp_left_right_block(top_lut_weights, y_block, top_lut, current_lut))
+                    ).astype(np.float32)
 
                 else:
                     # check to see if the block is present in the middle region of the image
@@ -353,9 +307,7 @@ class CLAHE:
                     top_lut = luts[i_row - 1, i_col]
                     left_lut = luts[i_row, i_col - 1]
                     current_lut = luts[i_row, i_col]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
                         (
                             self.interp_neighbor_block(
                                 left_lut_weights,
@@ -367,9 +319,7 @@ class CLAHE:
                                 current_lut,
                             )
                         )
-                    ).astype(
-                        np.float32
-                    )
+                    ).astype(np.float32)
 
         y_padded = self.crop(y_ceh, pads)
 

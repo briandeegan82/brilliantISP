@@ -5,6 +5,7 @@ Code / Paper  Reference: https://www.ipol.im/pub/art/2011/g_mhcd/article.pdf
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import numpy as np
 from scipy.signal import correlate2d
 
@@ -100,15 +101,9 @@ class Malvar:
         )
 
         # Applying other linear filters
-        rb_at_g_rbbr = correlate2d(
-            raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm"
-        )
-        rb_at_g_brrb = correlate2d(
-            raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm"
-        )
-        rb_at_gr_bbrr = correlate2d(
-            raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm"
-        )
+        rb_at_g_rbbr = correlate2d(raw_in, r_at_gr_and_b_at_gb, mode="same", boundary="symm")
+        rb_at_g_brrb = correlate2d(raw_in, r_at_gb_and_b_at_gr, mode="same", boundary="symm")
+        rb_at_gr_bbrr = correlate2d(raw_in, r_at_b_and_b_at_r, mode="same", boundary="symm")
 
         # After convolving the input raw image with rest of the filters,
         # now we have the respective interpolated data, now we just have
@@ -116,53 +111,33 @@ class Malvar:
         # position they are meant to be updated
 
         # Extracting Red rows.
-        r_rows = np.transpose(np.any(mask_r == 1, axis=1)[np.newaxis]) * np.ones(
-            r_channel.shape, dtype=np.float32
-        )
+        r_rows = np.transpose(np.any(mask_r == 1, axis=1)[np.newaxis]) * np.ones(r_channel.shape, dtype=np.float32)
 
         # Extracting Red columns.
-        r_col = np.any(mask_r == 1, axis=0)[np.newaxis] * np.ones(
-            r_channel.shape, dtype=np.float32
-        )
+        r_col = np.any(mask_r == 1, axis=0)[np.newaxis] * np.ones(r_channel.shape, dtype=np.float32)
 
         # Extracting Blue rows.
-        b_rows = np.transpose(np.any(mask_b == 1, axis=1)[np.newaxis]) * np.ones(
-            b_channel.shape, dtype=np.float32
-        )
+        b_rows = np.transpose(np.any(mask_b == 1, axis=1)[np.newaxis]) * np.ones(b_channel.shape, dtype=np.float32)
 
         # Extracting Blue columns
-        b_col = np.any(mask_b == 1, axis=0)[np.newaxis] * np.ones(
-            b_channel.shape, dtype=np.float32
-        )
+        b_col = np.any(mask_b == 1, axis=0)[np.newaxis] * np.ones(b_channel.shape, dtype=np.float32)
 
         # For R channel we have to update pixels at [r_channel rows
         # and b_channel cols] & at [b_channel rows and r_channel cols]
         # 3 pixels need to be updated near one given r_channel
-        r_channel = np.where(
-            np.logical_and(r_rows == 1, b_col == 1), rb_at_g_rbbr, r_channel
-        )
-        r_channel = np.where(
-            np.logical_and(b_rows == 1, r_col == 1), rb_at_g_brrb, r_channel
-        )
+        r_channel = np.where(np.logical_and(r_rows == 1, b_col == 1), rb_at_g_rbbr, r_channel)
+        r_channel = np.where(np.logical_and(b_rows == 1, r_col == 1), rb_at_g_brrb, r_channel)
 
         # Similarly for B channel we have to update pixels at
         # [r_channel rows and b_channel cols]
         # & at [b_channel rows and r_channel cols] 3 pixels need
         # to be updated near one given b_channel
-        b_channel = np.where(
-            np.logical_and(b_rows == 1, r_col == 1), rb_at_g_rbbr, b_channel
-        )
-        b_channel = np.where(
-            np.logical_and(r_rows == 1, b_col == 1), rb_at_g_brrb, b_channel
-        )
+        b_channel = np.where(np.logical_and(b_rows == 1, r_col == 1), rb_at_g_rbbr, b_channel)
+        b_channel = np.where(np.logical_and(r_rows == 1, b_col == 1), rb_at_g_brrb, b_channel)
 
         # Final r_channel & b_channel channels
-        r_channel = np.where(
-            np.logical_and(b_rows == 1, b_col == 1), rb_at_gr_bbrr, r_channel
-        )
-        b_channel = np.where(
-            np.logical_and(r_rows == 1, r_col == 1), rb_at_gr_bbrr, b_channel
-        )
+        r_channel = np.where(np.logical_and(b_rows == 1, b_col == 1), rb_at_gr_bbrr, r_channel)
+        b_channel = np.where(np.logical_and(r_rows == 1, r_col == 1), rb_at_gr_bbrr, b_channel)
 
         demos_out[:, :, 0] = r_channel
         demos_out[:, :, 1] = g_channel

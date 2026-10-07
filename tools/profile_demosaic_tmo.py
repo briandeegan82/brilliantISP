@@ -28,7 +28,6 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 
 from brilliant_isp import BrilliantISP
 
-
 # Demosaic algorithms to profile (CPU only)
 DEMOSAIC_ALGORITHMS = [
     "bilinear",
@@ -118,27 +117,27 @@ def load_and_prepare_config(config_path: Path) -> dict[str, Any]:
     """Load config and disable unnecessary outputs."""
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
-    
+
     # Disable all saves and plots
     config["platform"]["disable_progress_bar"] = True
     config["platform"]["plot_histograms"] = False
     config["platform"]["render_3a"] = False
     config["platform"]["debug_enabled"] = True
     config["platform"]["debug_log_level"] = "INFO"
-    
+
     # Disable GPU operations
     if "gpu" in config.get("platform", {}):
         config["platform"]["gpu"]["enabled"] = False
-    
+
     # Ensure auto white balance is properly configured
     if config.get("white_balance", {}).get("is_auto"):
         config["auto_white_balance"]["is_enable"] = True
-    
+
     # Disable all saves
     for key in config:
         if isinstance(config[key], dict) and "is_save" in config[key]:
             config[key]["is_save"] = False
-    
+
     return config
 
 
@@ -151,50 +150,48 @@ def profile_demosaic_algorithm(
 ) -> dict[str, Any]:
     """Profile a single demosaic algorithm."""
     timings = []
-    
+
     for run_idx in range(warmup + runs):
         clear_logger_handlers()
-        
+
         # Load config
         config = load_and_prepare_config(config_path)
         config["demosaic"]["algorithm"] = algorithm
-        
+
         # Create temp config
         temp_config = config_path.parent / f"temp_demosaic_{algorithm}.yml"
         with open(temp_config, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, sort_keys=False)
-        
+
         try:
             # Run pipeline
             data_path = str(raw_path.parent)
-            isp = BrilliantISP(
-                data_path, str(temp_config), outFileName=f"profile_{algorithm}"
-            )
+            isp = BrilliantISP(data_path, str(temp_config), outFileName=f"profile_{algorithm}")
             isp.raw_file = raw_path.name
-            
+
             if isp.c_yaml is None:
                 raise RuntimeError("Config failed to load.")
-            
+
             isp.c_yaml["platform"]["filename"] = raw_path.name
-            
+
             byte_order = isp.sensor_info["endian_type"] if isp.sensor_info else "ieee-le"
             load_byte_order = "big" if "be" in byte_order else "little"
             isp.load_raw(byte_order=load_byte_order)
-            
+
             start = time.perf_counter()
             isp.run_pipeline(visualize_output=False)
             elapsed = time.perf_counter() - start
-            
+
             # Only record after warmup
             if run_idx >= warmup:
                 timings.append(elapsed)
                 print(f"  {algorithm}: run {run_idx - warmup + 1}/{runs} = {elapsed:.3f}s")
-        
+
         finally:
             # Cleanup
             if temp_config.exists():
                 temp_config.unlink()
-    
+
     return {
         "algorithm": algorithm,
         "mean": statistics.fmean(timings) if timings else None,
@@ -214,51 +211,49 @@ def profile_tone_mapper(
 ) -> dict[str, Any]:
     """Profile a single tone mapping operator."""
     timings = []
-    
+
     for run_idx in range(warmup + runs):
         clear_logger_handlers()
-        
+
         # Load config
         config = load_and_prepare_config(config_path)
         config["tone_mapping"]["tone_mapper"] = tone_mapper
         config["tone_mapping"]["is_enable"] = True
-        
+
         # Create temp config
         temp_config = config_path.parent / f"temp_tmo_{tone_mapper}.yml"
         with open(temp_config, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, sort_keys=False)
-        
+
         try:
             # Run pipeline
             data_path = str(raw_path.parent)
-            isp = BrilliantISP(
-                data_path, str(temp_config), outFileName=f"profile_{tone_mapper}"
-            )
+            isp = BrilliantISP(data_path, str(temp_config), outFileName=f"profile_{tone_mapper}")
             isp.raw_file = raw_path.name
-            
+
             if isp.c_yaml is None:
                 raise RuntimeError("Config failed to load.")
-            
+
             isp.c_yaml["platform"]["filename"] = raw_path.name
-            
+
             byte_order = isp.sensor_info["endian_type"] if isp.sensor_info else "ieee-le"
             load_byte_order = "big" if "be" in byte_order else "little"
             isp.load_raw(byte_order=load_byte_order)
-            
+
             start = time.perf_counter()
             isp.run_pipeline(visualize_output=False)
             elapsed = time.perf_counter() - start
-            
+
             # Only record after warmup
             if run_idx >= warmup:
                 timings.append(elapsed)
                 print(f"  {tone_mapper}: run {run_idx - warmup + 1}/{runs} = {elapsed:.3f}s")
-        
+
         finally:
             # Cleanup
             if temp_config.exists():
                 temp_config.unlink()
-    
+
     return {
         "tone_mapper": tone_mapper,
         "mean": statistics.fmean(timings) if timings else None,
@@ -311,23 +306,25 @@ def build_report(
         f"- Platform: CPU only (GPU disabled)",
         "",
     ]
-    
+
     # Demosaic results
     if demosaic_results:
-        lines.extend([
-            "## Demosaic Algorithm Performance",
-            "",
-        ])
-        
+        lines.extend(
+            [
+                "## Demosaic Algorithm Performance",
+                "",
+            ]
+        )
+
         # Sort by mean time
         sorted_results = sorted(
             demosaic_results.values(),
             key=lambda x: x["mean"] if x["mean"] is not None else float("inf"),
         )
-        
+
         fastest = sorted_results[0] if sorted_results else None
         slowest = sorted_results[-1] if sorted_results else None
-        
+
         if fastest:
             lines.append(f"**Fastest**: `{fastest['algorithm']}` at {format_seconds(fastest['mean'])}")
         if slowest:
@@ -335,13 +332,13 @@ def build_report(
         if fastest and slowest and fastest["mean"] and slowest["mean"]:
             speedup = slowest["mean"] / fastest["mean"]
             lines.append(f"**Speedup**: {speedup:.2f}x (fastest vs slowest)")
-        
+
         lines.extend(["", "### Detailed Results", ""])
-        
+
         # Build table
         table_rows = []
         baseline_mean = fastest["mean"] if fastest else None
-        
+
         for result in sorted_results:
             relative = ""
             if baseline_mean and result["mean"]:
@@ -350,16 +347,18 @@ def build_report(
                 else:
                     ratio = result["mean"] / baseline_mean
                     relative = f"{ratio:.2f}x"
-            
-            table_rows.append([
-                result["algorithm"],
-                format_seconds(result["mean"]),
-                format_seconds(result["stdev"]),
-                format_seconds(result["min"]),
-                format_seconds(result["max"]),
-                relative,
-            ])
-        
+
+            table_rows.append(
+                [
+                    result["algorithm"],
+                    format_seconds(result["mean"]),
+                    format_seconds(result["stdev"]),
+                    format_seconds(result["min"]),
+                    format_seconds(result["max"]),
+                    relative,
+                ]
+            )
+
         lines.append(
             build_markdown_table(
                 ["Algorithm", "Mean", "Stdev", "Min", "Max", "Relative"],
@@ -367,23 +366,25 @@ def build_report(
             )
         )
         lines.extend(["", ""])
-    
+
     # Tone mapping results
     if tmo_results:
-        lines.extend([
-            "## Tone Mapping Operator Performance",
-            "",
-        ])
-        
+        lines.extend(
+            [
+                "## Tone Mapping Operator Performance",
+                "",
+            ]
+        )
+
         # Sort by mean time
         sorted_results = sorted(
             tmo_results.values(),
             key=lambda x: x["mean"] if x["mean"] is not None else float("inf"),
         )
-        
+
         fastest = sorted_results[0] if sorted_results else None
         slowest = sorted_results[-1] if sorted_results else None
-        
+
         if fastest:
             lines.append(f"**Fastest**: `{fastest['tone_mapper']}` at {format_seconds(fastest['mean'])}")
         if slowest:
@@ -391,13 +392,13 @@ def build_report(
         if fastest and slowest and fastest["mean"] and slowest["mean"]:
             speedup = slowest["mean"] / fastest["mean"]
             lines.append(f"**Speedup**: {speedup:.2f}x (fastest vs slowest)")
-        
+
         lines.extend(["", "### Detailed Results", ""])
-        
+
         # Build table
         table_rows = []
         baseline_mean = fastest["mean"] if fastest else None
-        
+
         for result in sorted_results:
             relative = ""
             if baseline_mean and result["mean"]:
@@ -406,16 +407,18 @@ def build_report(
                 else:
                     ratio = result["mean"] / baseline_mean
                     relative = f"{ratio:.2f}x"
-            
-            table_rows.append([
-                result["tone_mapper"],
-                format_seconds(result["mean"]),
-                format_seconds(result["stdev"]),
-                format_seconds(result["min"]),
-                format_seconds(result["max"]),
-                relative,
-            ])
-        
+
+            table_rows.append(
+                [
+                    result["tone_mapper"],
+                    format_seconds(result["mean"]),
+                    format_seconds(result["stdev"]),
+                    format_seconds(result["min"]),
+                    format_seconds(result["max"]),
+                    relative,
+                ]
+            )
+
         lines.append(
             build_markdown_table(
                 ["Tone Mapper", "Mean", "Stdev", "Min", "Max", "Relative"],
@@ -423,59 +426,59 @@ def build_report(
             )
         )
         lines.extend(["", ""])
-    
+
     # Notes
-    lines.extend([
-        "## Notes",
-        "",
-        "- All measurements are CPU-only (GPU acceleration disabled)",
-        "- Times include the entire ISP pipeline execution, not just the profiled module",
-        "- Results are input-dependent and may vary with different images",
-        "- 'Relative' column shows slowdown factor compared to the fastest variant",
-        "- Optimized variants (e.g., `_opt`) typically use vectorized operations for better performance",
-        "",
-    ])
-    
+    lines.extend(
+        [
+            "## Notes",
+            "",
+            "- All measurements are CPU-only (GPU acceleration disabled)",
+            "- Times include the entire ISP pipeline execution, not just the profiled module",
+            "- Results are input-dependent and may vary with different images",
+            "- 'Relative' column shows slowdown factor compared to the fastest variant",
+            "- Optimized variants (e.g., `_opt`) typically use vectorized operations for better performance",
+            "",
+        ]
+    )
+
     return "\n".join(lines)
 
 
 def main() -> int:
     args = parse_args()
-    
+
     if not args.config.exists():
         raise FileNotFoundError(f"Config file not found: {args.config}")
     if not args.raw.exists():
         raise FileNotFoundError(f"RAW file not found: {args.raw}")
-    
+
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.data.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Determine what to profile
     profile_demosaic = args.profile_demosaic and not args.tmo_only
     profile_tmo = args.profile_tmo and not args.demosaic_only
-    
+
     if args.demosaic_only:
         profile_demosaic = True
         profile_tmo = False
     elif args.tmo_only:
         profile_demosaic = False
         profile_tmo = True
-    
+
     demosaic_results = {}
     tmo_results = {}
-    
+
     # Profile demosaic algorithms
     if profile_demosaic:
         print(f"\n{'='*70}")
         print("Profiling Demosaic Algorithms (CPU only)")
         print(f"{'='*70}\n")
-        
+
         for algorithm in DEMOSAIC_ALGORITHMS:
             print(f"\nProfiling demosaic algorithm: {algorithm}")
             try:
-                result = profile_demosaic_algorithm(
-                    args.config, args.raw, algorithm, args.runs, args.warmup_runs
-                )
+                result = profile_demosaic_algorithm(args.config, args.raw, algorithm, args.runs, args.warmup_runs)
                 demosaic_results[algorithm] = result
                 print(f"  Mean: {format_seconds(result['mean'])}")
             except Exception as e:
@@ -489,19 +492,17 @@ def main() -> int:
                     "max": None,
                     "timings": [],
                 }
-    
+
     # Profile tone mapping operators
     if profile_tmo:
         print(f"\n{'='*70}")
         print("Profiling Tone Mapping Operators (CPU only)")
         print(f"{'='*70}\n")
-        
+
         for tone_mapper in TONE_MAPPERS:
             print(f"\nProfiling tone mapper: {tone_mapper}")
             try:
-                result = profile_tone_mapper(
-                    args.config, args.raw, tone_mapper, args.runs, args.warmup_runs
-                )
+                result = profile_tone_mapper(args.config, args.raw, tone_mapper, args.runs, args.warmup_runs)
                 tmo_results[tone_mapper] = result
                 print(f"  Mean: {format_seconds(result['mean'])}")
             except Exception as e:
@@ -515,7 +516,7 @@ def main() -> int:
                     "max": None,
                     "timings": [],
                 }
-    
+
     # Build report
     report_text = build_report(
         config_path=args.config,
@@ -525,10 +526,10 @@ def main() -> int:
         demosaic_results=demosaic_results if profile_demosaic else None,
         tmo_results=tmo_results if profile_tmo else None,
     )
-    
+
     # Save results
     args.report.write_text(report_text, encoding="utf-8")
-    
+
     all_results = {
         "config": str(args.config),
         "raw_file": str(args.raw),
@@ -538,12 +539,12 @@ def main() -> int:
         "tmo_results": tmo_results if profile_tmo else None,
     }
     args.data.write_text(json.dumps(all_results, indent=2), encoding="utf-8")
-    
+
     print(f"\n{'='*70}")
     print(f"Report written to: {args.report}")
     print(f"Raw data written to: {args.data}")
     print(f"{'='*70}\n")
-    
+
     return 0
 
 

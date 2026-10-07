@@ -22,12 +22,16 @@ sensor_info:
   sensor: SVS
   endian_type: ieee-be
   data_format: uint16
+  data_alignment: LSB  # SVS sensor outputs properly aligned data
+  horizontal_flip: false
+  vertical_flip: false
   embedded_rows_top: 0
   embedded_rows_bottom: 0
 companding:
   is_enable: true
   is_debug: false
-  pedestal: 240
+  pre_linearization_black_level: 240
+  post_linearization_black_level: 0
   companded: true
   companded_pin:
   - 1

@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: gamma_correction.py
 Description: Gamma correction with optional sRGB curve.
@@ -78,10 +79,12 @@ class GammaCorrection:
                 input_bit_depth = 8
             else:
                 input_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
-        
-        self.logger.info(f"  Input dtype: {self.img.dtype}, detected bit depth: {input_bit_depth}, output bit depth: {self.output_bit_depth}")
+
+        self.logger.info(
+            f"  Input dtype: {self.img.dtype}, detected bit depth: {input_bit_depth}, output bit depth: {self.output_bit_depth}"
+        )
         self.logger.info(f"  Input range: [{np.min(self.img)}, {np.max(self.img)}]")
-        
+
         input_max = 2**input_bit_depth - 1
         lut = self.generate_gamma_lut(input_bit_depth).T
 
@@ -90,17 +93,13 @@ class GammaCorrection:
         elif self.img.dtype == np.uint16:
             img_indices = self.img
         else:
-            img_indices = np.clip(self.img, 0, input_max).astype(
-                np.uint8 if input_bit_depth == 8 else np.uint16
-            )
+            img_indices = np.clip(self.img, 0, input_max).astype(np.uint8 if input_bit_depth == 8 else np.uint16)
 
         # apply LUT
         gamma_img = lut[cast(np.ndarray, img_indices)]
         if self.output_bit_depth == 8:
             if input_bit_depth != 8:
-                gamma_img = np.clip(
-                    (gamma_img.astype(np.float32) / input_max * 255), 0, 255
-                ).astype(np.uint8)
+                gamma_img = np.clip((gamma_img.astype(np.float32) / input_max * 255), 0, 255).astype(np.uint8)
             else:
                 gamma_img = gamma_img.astype(np.uint8)
             return gamma_img

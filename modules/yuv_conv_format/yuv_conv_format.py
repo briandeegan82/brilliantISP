@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: yuv_conv_format.py
 Description:
@@ -71,9 +72,7 @@ class YUVConvFormat:
         Function to save module output
         """
         # update size of array in filename
-        self.in_file = re.sub(
-            r"\d+x\d+", f"{self.shape[1]}x{self.shape[0]}", self.in_file
-        )
+        self.in_file = re.sub(r"\d+x\d+", f"{self.shape[1]}x{self.shape[0]}", self.in_file)
         if self.is_save:
             # save format for yuv_conversion_format is .npy only
             save_format = self.platform["save_format"]
@@ -92,9 +91,7 @@ class YUVConvFormat:
 
     def execute(self) -> UInt8Image:
         """Execute YUV conversion if enabled."""
-        self.logger.info(
-            f"YUV conversion format {self.param_yuv['conv_type']} = {self.enable}"
-        )
+        self.logger.info(f"YUV conversion format {self.param_yuv['conv_type']} = {self.enable}")
 
         if self.enable:
             if self.platform["rgb_output"]:

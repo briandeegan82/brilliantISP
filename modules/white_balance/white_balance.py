@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: white_balance.py
 Description: Applies the white balance gains from the config file
@@ -76,7 +77,7 @@ class WhiteBalance:
             self.logger.info(f"  Max value: {np.max(self.raw)}")
             self.logger.info(f"  Clipping values to {self.bpp} bits.")
             self.raw = np.clip(self.raw, 0, (2**self.bpp) - 1)
-        
+
         raw_whitebal = self.raw.astype(np.uint32)
 
         return raw_whitebal

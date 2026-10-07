@@ -6,6 +6,7 @@ https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pd
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import time
 import re
@@ -17,28 +18,25 @@ from util.isp_types import PlatformConfig, RGBImage, ScaleConfig, SensorInfo
 
 # Import GPU utilities with fallback
 try:
-    from util.gpu_utils import (
-        is_gpu_available, should_use_gpu, gpu_resize, 
-        to_umat, from_umat
-    )
+    from util.gpu_utils import is_gpu_available, should_use_gpu, gpu_resize, to_umat, from_umat
+
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
+
     # Fallback functions for CPU-only systems
     def is_gpu_available() -> bool:
         return False
-    
+
     def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
         return False
-    
-    def gpu_resize(
-        img: np.ndarray, size: tuple[int, int], interpolation: int, use_gpu: bool = True
-    ) -> np.ndarray:
+
+    def gpu_resize(img: np.ndarray, size: tuple[int, int], interpolation: int, use_gpu: bool = True) -> np.ndarray:
         return cv2.resize(img, size, interpolation=interpolation)
-    
+
     def to_umat(img: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return img
-    
+
     def from_umat(umat_or_array: np.ndarray) -> np.ndarray:
         return umat_or_array
 
@@ -62,11 +60,10 @@ class ScaleGPU:
         self.platform = platform
         self.conv_std = conv_std
         self.get_scaling_params()
-        
+
         # Check if GPU acceleration should be used
-        self.use_gpu = (is_gpu_available() and 
-                       should_use_gpu((sensor_info["height"], sensor_info["width"]), 'resize'))
-        
+        self.use_gpu = is_gpu_available() and should_use_gpu((sensor_info["height"], sensor_info["width"]), "resize")
+
         self._log = logging.getLogger(__name__)
         if self.use_gpu:
             self._log.info("  Using GPU acceleration for Image Scaling")
@@ -83,13 +80,9 @@ class ScaleGPU:
             return self.img
 
         if self.img.dtype == "float32":
-            scaled_img = np.empty(
-                (self.new_size[0], self.new_size[1], 3), dtype="float32"
-            )
+            scaled_img = np.empty((self.new_size[0], self.new_size[1], 3), dtype="float32")
         else:
-            scaled_img = np.empty(
-                (self.new_size[0], self.new_size[1], 3), dtype="uint8"
-            )
+            scaled_img = np.empty((self.new_size[0], self.new_size[1], 3), dtype="uint8")
 
         # Determine interpolation method
         if self.parm_sca["algorithm"].lower() == "bilinear":
@@ -102,7 +95,7 @@ class ScaleGPU:
         # Loop over each channel to resize the image
         for i in range(3):
             ch_arr = self.img[:, :, i]
-            
+
             if self.use_gpu and GPU_UTILS_AVAILABLE:
                 # Use GPU-accelerated scaling
                 scaled_ch = self.scale_channel_gpu(ch_arr, interpolation)
@@ -122,38 +115,35 @@ class ScaleGPU:
 
         return scaled_img
 
-    def scale_channel_gpu(
-        self, ch_arr: np.ndarray, interpolation: int
-    ) -> np.ndarray:
+    def scale_channel_gpu(self, ch_arr: np.ndarray, interpolation: int) -> np.ndarray:
         """
         GPU-accelerated channel scaling
         """
         try:
             # OpenCV expects (width, height) format
             new_size_cv2 = (self.new_size[1], self.new_size[0])
-            
+
             # Use GPU-accelerated resize
             scaled_ch = gpu_resize(ch_arr, new_size_cv2, interpolation, use_gpu=True)
-            
+
             return scaled_ch
-            
+
         except Exception as e:
             self._log.warning(f"    GPU scaling failed, falling back to CPU: {e}")
             return self.scale_channel_cpu(ch_arr, interpolation)
 
-    def scale_channel_cpu(
-        self, ch_arr: np.ndarray, interpolation: int
-    ) -> np.ndarray:
+    def scale_channel_cpu(self, ch_arr: np.ndarray, interpolation: int) -> np.ndarray:
         """
         CPU implementation of channel scaling
         """
         import cv2
+
         # OpenCV expects (width, height) format
         new_size_cv2 = (self.new_size[1], self.new_size[0])
-        
+
         # Use CPU resize
         scaled_ch = cv2.resize(ch_arr, new_size_cv2, interpolation=interpolation)
-        
+
         return scaled_ch
 
     def get_scaling_params(self) -> None:

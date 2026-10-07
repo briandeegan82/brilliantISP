@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: ldci.py
 Description: Implements the contrast adjustment in the yuv domain
@@ -58,7 +59,7 @@ class LDCI:
             # Use original version
             self.logger.info("  Using original CLAHE")
             clahe = CLAHE(self.yuv, self.platform, self.sensor_info, self.parm_ldci)
-        
+
         out_ceh = clahe.apply_clahe()
         return out_ceh
 

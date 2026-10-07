@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: white_balance_optimized.py
 Description: White balance on linear scene-referred raw (Bayer domain).
@@ -61,16 +62,16 @@ class WhiteBalanceOptimized:
         # Create gain masks for efficient multiplication
         if self.bayer == "rggb":
             # OPTIMIZATION: Use advanced indexing for vectorized operations
-            self.raw[::2, ::2] *= redgain    # Red pixels
-            self.raw[1::2, 1::2] *= bluegain # Blue pixels
+            self.raw[::2, ::2] *= redgain  # Red pixels
+            self.raw[1::2, 1::2] *= bluegain  # Blue pixels
         elif self.bayer == "bggr":
-            self.raw[::2, ::2] *= bluegain   # Blue pixels
+            self.raw[::2, ::2] *= bluegain  # Blue pixels
             self.raw[1::2, 1::2] *= redgain  # Red pixels
         elif self.bayer == "grbg":
             self.raw[1::2, ::2] *= bluegain  # Blue pixels
-            self.raw[::2, 1::2] *= redgain   # Red pixels
+            self.raw[::2, 1::2] *= redgain  # Red pixels
         elif self.bayer == "gbrg":
-            self.raw[1::2, ::2] *= redgain   # Red pixels
+            self.raw[1::2, ::2] *= redgain  # Red pixels
             self.raw[::2, 1::2] *= bluegain  # Blue pixels
 
         # OPTIMIZATION: Use vectorized clipping with bounds checking
@@ -81,7 +82,7 @@ class WhiteBalanceOptimized:
             self.logger.info(f"  Clipping values to {self.bpp} bits.")
             # OPTIMIZATION: Use in-place clipping for efficiency
             np.clip(self.raw, 0, max_value, out=self.raw)
-        
+
         raw_whitebal = self.raw.astype(np.uint32)
 
         return raw_whitebal
