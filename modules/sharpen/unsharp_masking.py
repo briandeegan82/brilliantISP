@@ -4,6 +4,7 @@ Description: Simple unsharp masking with frequency and strength control.
 Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 """
+
 import numpy as np
 from scipy import ndimage
 
@@ -13,9 +14,7 @@ class UnsharpMasking:
     Implements Unsharp Masking Algorithm
     """
 
-    def __init__(
-        self, img: np.ndarray, sharpen_sigma: float, sharpen_strength: float
-    ) -> None:
+    def __init__(self, img: np.ndarray, sharpen_sigma: float, sharpen_strength: float) -> None:
         self.img = img
         self.sharpen_sigma = sharpen_sigma
         self.sharpen_strength = sharpen_strength

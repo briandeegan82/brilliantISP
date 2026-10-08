@@ -8,6 +8,7 @@ Fast Open ISP Author: Qiu Jueqin (qiujueqin@gmail.com)
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import numpy as np
 from util.debug_utils import get_debug_logger
 from tqdm import tqdm
@@ -92,17 +93,13 @@ class NLM:
         # will have the largest weight_for_each_shifted_array)
         weights_lut = self.get_weights()
 
-        for i in tqdm(
-            range(window_size), disable=self.is_progress, leave=self.is_leave
-        ):
+        for i in tqdm(range(window_size), disable=self.is_progress, leave=self.is_leave):
             for j in range(window_size):
                 # Creating arrays starting from pixels according to the search window --
                 # There will N = search_window*search_window stacked arrays of input
                 # image size
                 array_for_each_pixel_in_sw = np.int32(
-                    wtspadded_y_in[
-                        i : i + input_image.shape[0], j : j + input_image.shape[1], ...
-                    ]
+                    wtspadded_y_in[i : i + input_image.shape[0], j : j + input_image.shape[1], ...]
                 )
 
                 # Finding euclidean distance between pixels based on their intensities
@@ -115,9 +112,7 @@ class NLM:
                 weight_for_each_shifted_array = weights_lut[distance]
 
                 # Adding up all the weighted similar pixels
-                denoised_y_channel += (
-                    array_for_each_pixel_in_sw * weight_for_each_shifted_array
-                )
+                denoised_y_channel += array_for_each_pixel_in_sw * weight_for_each_shifted_array
 
                 # Adding up all the weights for final mean values at each pixel location
                 final_weights += weight_for_each_shifted_array
@@ -145,11 +140,7 @@ class NLM:
 
         for i in range(patch_size):
             for j in range(patch_size):
-                summed_up_arrays += np.int32(
-                    padded_array[i : i + array.shape[0], j : j + array.shape[1], ...]
-                )
+                summed_up_arrays += np.int32(padded_array[i : i + array.shape[0], j : j + array.shape[1], ...])
 
-        output_mean_filtered = ((summed_up_arrays) / patch_size**2).astype(
-            array.dtype
-        )
+        output_mean_filtered = ((summed_up_arrays) / patch_size**2).astype(array.dtype)
         return output_mean_filtered

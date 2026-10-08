@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: auto_white_balance.py
 Description: 3A - AWB Runs the AWB algorithm based on selection from config file
@@ -36,13 +37,9 @@ class AutoWhiteBalance:
         # self.img = img
         self.algorithm = parm_awb["algorithm"]
         self.parm_wbc = parm_wbc
-        
+
         # Initialize debug logger with config from parm_awb
-        debug_config = {
-            'debug_enabled': parm_awb.get('is_debug', False),
-            'debug_log_level': 'INFO',
-            'debug_log_file': None
-        }
+        debug_config = {"debug_enabled": parm_awb.get("is_debug", False), "debug_log_level": "INFO", "debug_log_file": None}
         self.logger = get_debug_logger("AutoWhiteBalance", config=debug_config)
 
     def determine_white_balance_gain(self):
@@ -53,9 +50,7 @@ class AutoWhiteBalance:
         max_pixel_value = 2**self.hdr_bit_depth
         approx_percentage = max_pixel_value / 100
         # Removed overexposed and underexposed pixels for wb gain calculation
-        overexposed_limit = (
-            max_pixel_value - (self.overexposed_percentage) * approx_percentage
-        )
+        overexposed_limit = max_pixel_value - (self.overexposed_percentage) * approx_percentage
         underexposed_limit = (self.underexposed_percentage) * approx_percentage
 
         if self.is_debug:
@@ -101,8 +96,7 @@ class AutoWhiteBalance:
 
         bad_pixels = np.sum(
             np.where(
-                (bayer_channels < underexposed_limit)
-                | (bayer_channels > overexposed_limit),
+                (bayer_channels < underexposed_limit) | (bayer_channels > overexposed_limit),
                 1,
                 0,
             ),

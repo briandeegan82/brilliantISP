@@ -12,46 +12,49 @@ from typing import Any, Callable, cast
 def _shape2d(img: np.ndarray) -> tuple[int, int]:
     return int(img.shape[0]), int(img.shape[1])
 
+
 def is_gpu_available() -> bool:
     """Check if CUDA-enabled GPU is available for OpenCV operations."""
     return cv2.cuda.getCudaEnabledDeviceCount() > 0
+
 
 def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
     """
     Determine if GPU acceleration should be used based on image size and operation type.
     Updated based on CUDA benchmark results.
-    
+
     Args:
         img_size: Image dimensions (height, width)
         operation: Type of operation ('resize', 'bilateral_filter', 'filter2d', 'gaussian_blur')
-        
+
     Returns:
         True if GPU should be used, False otherwise
     """
     if not is_gpu_available():
         return False
-    
+
     # Calculate image area
     area = img_size[0] * img_size[1]
-    
+
     # Operation-specific thresholds based on CUDA benchmark results
     thresholds = {
-        'gaussian_blur': 100000,  # Always beneficial (7x speedup observed)
-        'resize': 4000000,  # Only for large images due to transfer overhead
-        'bilateral_filter': 8000000,  # Only for very large images
-        'filter2d': 2000000,  # Moderate threshold
+        "gaussian_blur": 100000,  # Always beneficial (7x speedup observed)
+        "resize": 4000000,  # Only for large images due to transfer overhead
+        "bilateral_filter": 8000000,  # Only for very large images
+        "filter2d": 2000000,  # Moderate threshold
     }
-    
+
     return area >= thresholds.get(operation, 2000000)
+
 
 def to_umat(img: np.ndarray, use_gpu: bool = True) -> Any:
     """
     Convert numpy array to UMat if GPU is available and requested.
-    
+
     Args:
         img: Input numpy array
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         UMat if GPU available and requested, otherwise original numpy array
     """
@@ -64,10 +67,10 @@ def to_umat(img: np.ndarray, use_gpu: bool = True) -> Any:
 def from_umat(umat_or_array: Any) -> np.ndarray:
     """
     Convert UMat back to numpy array.
-    
+
     Args:
         umat_or_array: UMat or numpy array
-        
+
     Returns:
         Numpy array
     """
@@ -75,6 +78,7 @@ def from_umat(umat_or_array: Any) -> np.ndarray:
     if callable(getter):
         return cast(np.ndarray, getter())
     return cast(np.ndarray, umat_or_array)
+
 
 def gpu_resize(
     img: np.ndarray,
@@ -85,17 +89,17 @@ def gpu_resize(
     """
     GPU-accelerated image resizing.
     Only beneficial for large images due to transfer overhead.
-    
+
     Args:
         img: Input image
         size: Target size (width, height)
         interpolation: Interpolation method
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         Resized image
     """
-    if use_gpu and should_use_gpu(_shape2d(img), 'resize'):
+    if use_gpu and should_use_gpu(_shape2d(img), "resize"):
         try:
             gpu_img = to_umat(img, use_gpu=True)
             resize = cast(Any, cv2.resize)
@@ -103,8 +107,9 @@ def gpu_resize(
             return from_umat(gpu_result)
         except Exception as e:
             logging.getLogger("BrilliantISP.GPU").warning(f"GPU resize failed, falling back to CPU: {e}")
-    
+
     return cv2.resize(img, size, interpolation=interpolation)
+
 
 def gpu_bilateral_filter(
     img: np.ndarray,
@@ -116,25 +121,23 @@ def gpu_bilateral_filter(
     """
     GPU-accelerated bilateral filtering.
     Only beneficial for very large images due to transfer overhead.
-    
+
     Args:
         img: Input image
         d: Diameter of pixel neighborhood
         sigma_color: Filter sigma in the color space
         sigma_space: Filter sigma in the coordinate space
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         Filtered image
     """
-    if use_gpu and should_use_gpu(_shape2d(img), 'bilateral_filter'):
+    if use_gpu and should_use_gpu(_shape2d(img), "bilateral_filter"):
         try:
             # Try direct CUDA first (faster than UMat)
             gpu_img = cast(Any, cv2).cuda_GpuMat()
             gpu_img.upload(img.astype(np.float32))
-            gpu_result = cast(Any, cv2).cuda.bilateralFilter(
-                gpu_img, d, sigma_color, sigma_space
-            )
+            gpu_result = cast(Any, cv2).cuda.bilateralFilter(gpu_img, d, sigma_color, sigma_space)
             return gpu_result.download()
         except Exception as e:
             # Fallback to UMat
@@ -145,24 +148,23 @@ def gpu_bilateral_filter(
                 return from_umat(gpu_result)
             except Exception as e2:
                 logging.getLogger("BrilliantISP.GPU").warning(f"GPU bilateral filter failed, falling back to CPU: {e2}")
-    
+
     return cv2.bilateralFilter(img, d, sigma_color, sigma_space)
 
-def gpu_filter2d(
-    img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True
-) -> np.ndarray:
+
+def gpu_filter2d(img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True) -> np.ndarray:
     """
     GPU-accelerated 2D filtering.
-    
+
     Args:
         img: Input image
         kernel: Convolution kernel
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         Filtered image
     """
-    if use_gpu and should_use_gpu(_shape2d(img), 'filter2d'):
+    if use_gpu and should_use_gpu(_shape2d(img), "filter2d"):
         try:
             gpu_img = to_umat(img, use_gpu=True)
             gpu_kernel = to_umat(kernel, use_gpu=True)
@@ -171,8 +173,9 @@ def gpu_filter2d(
             return from_umat(gpu_result)
         except Exception as e:
             logging.getLogger("BrilliantISP.GPU").warning(f"GPU filter2D failed, falling back to CPU: {e}")
-    
+
     return cv2.filter2D(img, -1, kernel)
+
 
 def gpu_gaussian_blur(
     img: np.ndarray,
@@ -184,14 +187,14 @@ def gpu_gaussian_blur(
     """
     GPU-accelerated Gaussian blur.
     Always beneficial when GPU is available (7x speedup observed).
-    
+
     Args:
         img: Input image
         ksize: Kernel size (width, height)
         sigma_x: Gaussian kernel standard deviation in X direction
         sigma_y: Gaussian kernel standard deviation in Y direction
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         Blurred image
     """
@@ -204,8 +207,9 @@ def gpu_gaussian_blur(
             return from_umat(gpu_result)
         except Exception as e:
             logging.getLogger("BrilliantISP.GPU").warning(f"GPU Gaussian blur failed, falling back to CPU: {e}")
-    
+
     return cv2.GaussianBlur(img, ksize, sigma_x, sigmaY=sigma_y)
+
 
 def gpu_pipeline_optimized(
     operations: list[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]],
@@ -215,12 +219,12 @@ def gpu_pipeline_optimized(
     """
     Optimized GPU pipeline that keeps data in GPU memory between operations.
     Updated to use direct CUDA where beneficial.
-    
+
     Args:
         operations: List of (function, args, kwargs) tuples for operations
         img: Input image
         use_gpu: Whether to use GPU acceleration
-        
+
     Returns:
         Processed image
     """
@@ -230,11 +234,11 @@ def gpu_pipeline_optimized(
         for func, args, kwargs in operations:
             result = func(result, *args, **kwargs)
         return result
-    
+
     try:
         # Convert to GPU once
         gpu_img = to_umat(img, use_gpu=True)
-        
+
         # Apply all operations on GPU
         for func, args, kwargs in operations:
             # Handle different function signatures
@@ -245,9 +249,7 @@ def gpu_pipeline_optimized(
                 try:
                     cuda_img = cast(Any, cv2).cuda_GpuMat()
                     cuda_img.upload(from_umat(gpu_img))
-                    cuda_result = cast(Any, cv2).cuda.bilateralFilter(
-                        cuda_img, *args, **kwargs
-                    )
+                    cuda_result = cast(Any, cv2).cuda.bilateralFilter(cuda_img, *args, **kwargs)
                     gpu_img = to_umat(cuda_result.download(), use_gpu=True)
                 except Exception:
                     gpu_img = cast(Any, func)(gpu_img, *args, **kwargs)
@@ -260,10 +262,10 @@ def gpu_pipeline_optimized(
                 cpu_img = from_umat(gpu_img)
                 cpu_result = func(cpu_img, *args, **kwargs)
                 gpu_img = to_umat(cpu_result, use_gpu=True)
-        
+
         # Convert back to CPU at the end
         return from_umat(gpu_img)
-        
+
     except Exception as e:
         logging.getLogger("BrilliantISP.GPU").warning(f"GPU pipeline failed, falling back to CPU: {e}")
         # CPU fallback
@@ -271,6 +273,7 @@ def gpu_pipeline_optimized(
         for func, args, kwargs in operations:
             result = func(result, *args, **kwargs)
         return result
+
 
 def benchmark_gpu_vs_cpu(
     func_gpu: Callable[..., Any],
@@ -280,31 +283,31 @@ def benchmark_gpu_vs_cpu(
 ) -> dict[str, float | None]:
     """
     Benchmark GPU vs CPU performance for a given function.
-    
+
     Args:
         func_gpu: GPU version of the function
         func_cpu: CPU version of the function
         *args: Arguments to pass to both functions
         iterations: Number of iterations for benchmarking
-        
+
     Returns:
         Dictionary with timing results
     """
     import time
-    
+
     # Warm up
     for _ in range(3):
         func_cpu(*args)
         if is_gpu_available():
             func_gpu(*args)
-    
+
     # CPU timing
     cpu_times = []
     for _ in range(iterations):
         start = time.time()
         func_cpu(*args)
         cpu_times.append(time.time() - start)
-    
+
     # GPU timing
     gpu_times = []
     if is_gpu_available():
@@ -312,7 +315,7 @@ def benchmark_gpu_vs_cpu(
             start = time.time()
             func_gpu(*args)
             gpu_times.append(time.time() - start)
-    
+
     return {
         "cpu_avg": float(np.mean(cpu_times)),
         "cpu_std": float(np.std(cpu_times)),

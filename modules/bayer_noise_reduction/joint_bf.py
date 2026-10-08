@@ -65,12 +65,8 @@ class JointBF:
         in_img = np.float32(in_img) / (2**bit_depth - 1)
 
         interp_g = np.zeros((height, width), dtype=np.float32)
-        in_img_r = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
-        in_img_b = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
+        in_img_r = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
+        in_img_b = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
 
         # convert bayer image into sub-images for filtering each colour ch
         in_img_raw = in_img.copy()
@@ -123,12 +119,8 @@ class JointBF:
         kern_filt_g_at_b = np.clip(kern_filt_g_at_b, 0, 1)
 
         interp_g = in_img.copy()
-        interp_g_at_r = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
-        interp_g_at_b = np.zeros(
-            (np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32
-        )
+        interp_g_at_r = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
+        interp_g_at_b = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
 
         if bayer_pattern == "rggb":
             # extract R and B location Green pixels to form interpG image
@@ -205,41 +197,23 @@ class JointBF:
         bnr_out_img = out_img_g.copy()
 
         if bayer_pattern == "rggb":
-            bnr_out_img[0:height:2, 0:width:2] = out_img_r[
-                0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1
-            ]
-            bnr_out_img[1:height:2, 1:width:2] = out_img_b[
-                0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1
-            ]
+            bnr_out_img[0:height:2, 0:width:2] = out_img_r[0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1]
+            bnr_out_img[1:height:2, 1:width:2] = out_img_b[0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1]
 
         elif bayer_pattern == "bggr":
-            bnr_out_img[1:height:2, 1:width:2] = out_img_r[
-                0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1
-            ]
-            bnr_out_img[0:height:2, 0:width:2] = out_img_b[
-                0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1
-            ]
+            bnr_out_img[1:height:2, 1:width:2] = out_img_r[0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1]
+            bnr_out_img[0:height:2, 0:width:2] = out_img_b[0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1]
 
         elif bayer_pattern == "grbg":
-            bnr_out_img[0:height:2, 1:width:2] = out_img_r[
-                0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1
-            ]
-            bnr_out_img[1:height:2, 0:width:2] = out_img_b[
-                0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1
-            ]
+            bnr_out_img[0:height:2, 1:width:2] = out_img_r[0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1]
+            bnr_out_img[1:height:2, 0:width:2] = out_img_b[0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1]
 
         elif bayer_pattern == "gbrg":
-            bnr_out_img[1:height:2, 0:width:2] = out_img_r[
-                0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1
-            ]
-            bnr_out_img[0:height:2, 1:width:2] = out_img_b[
-                0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1
-            ]
+            bnr_out_img[1:height:2, 0:width:2] = out_img_r[0 : np.size(out_img_r, 0) : 1, 0 : np.size(out_img_r, 1) : 1]
+            bnr_out_img[0:height:2, 1:width:2] = out_img_b[0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1]
 
         # convert normalized image to 32-bit range
-        bnr_out_img = (
-            np.clip(bnr_out_img, 0, 1) * ((2**bit_depth) - 1)
-        ).astype(np.uint32)
+        bnr_out_img = (np.clip(bnr_out_img, 0, 1) * ((2**bit_depth) - 1)).astype(np.uint32)
         return bnr_out_img
 
     def gauss_kern_raw(self, kern: int, std_dev: float, stride: int) -> np.ndarray:
@@ -261,12 +235,7 @@ class JointBF:
                 # stride is used to adjust the gaussian weights for neighbourhood
                 # pixel that are 'stride' spaces apart in a bayer image
                 out_kern[i, j] = np.exp(
-                    -1
-                    * (
-                        (stride * (i - ((kern - 1) / 2))) ** 2
-                        + (stride * (j - ((kern - 1) / 2))) ** 2
-                    )
-                    / (2 * (std_dev**2))
+                    -1 * ((stride * (i - ((kern - 1) / 2))) ** 2 + (stride * (j - ((kern - 1) / 2))) ** 2) / (2 * (std_dev**2))
                 )
 
         sum_kern = np.sum(out_kern)
@@ -292,22 +261,14 @@ class JointBF:
         # than zero and are odd
         if spatial_kern <= 0:
             spatial_kern = 3
-            warnings.warn(
-                "spatial kernel size (spatial_kern) cannot be <= zero, setting it as 3"
-            )
+            warnings.warn("spatial kernel size (spatial_kern) cannot be <= zero, setting it as 3")
         elif spatial_kern % 2 == 0:
-            warnings.warn(
-                "range kernel size (spatial_kern) cannot be even, "
-                "assigning it an odd value"
-            )
+            warnings.warn("range kernel size (spatial_kern) cannot be even, " "assigning it an odd value")
             spatial_kern = spatial_kern + 1
 
         # check if range_kern > spatial_kern
         if range_kern > spatial_kern:
-            warnings.warn(
-                "range kernel size (range_kern) cannot be more "
-                "than spatial kernel size (spatial_kern)"
-            )
+            warnings.warn("range kernel size (range_kern) cannot be more " "than spatial kernel size (spatial_kern)")
             range_kern = spatial_kern
 
         # spawn a NxN gaussian kernel
@@ -318,9 +279,7 @@ class JointBF:
         pad_len = int((spatial_kern - 1) / 2)
         kern_arm = pad_len
         in_img_ext = np.pad(in_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect")
-        guide_img_ext = np.pad(
-            guide_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect"
-        )
+        guide_img_ext = np.pad(guide_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect")
 
         filt_out = np.zeros(in_img.shape, dtype=np.float32)
 
@@ -331,38 +290,24 @@ class JointBF:
         ):
             for j in range(kern_arm, np.size(in_img, 1) + kern_arm):
                 guide_img_ext_center_pix = guide_img_ext[i, j]
-                guide_img_ext_filt_window = guide_img_ext[
-                    i - kern_arm : i + kern_arm + 1, j - kern_arm : j + kern_arm + 1
-                ]
-                in_img_ext_filt_window = in_img_ext[
-                    i - kern_arm : i + kern_arm + 1, j - kern_arm : j + kern_arm + 1
-                ]
+                guide_img_ext_filt_window = guide_img_ext[i - kern_arm : i + kern_arm + 1, j - kern_arm : j + kern_arm + 1]
+                in_img_ext_filt_window = in_img_ext[i - kern_arm : i + kern_arm + 1, j - kern_arm : j + kern_arm + 1]
 
                 # normalization fact of a filter window = sum(matrix multiplication of
                 # spatial kernel and range kernel weights) = sum of filter weights
                 norm_fact = np.sum(
                     s_kern[0:spatial_kern, 0:spatial_kern]
-                    * np.exp(
-                        -1
-                        * (guide_img_ext_center_pix - guide_img_ext_filt_window) ** 2
-                        / (2 * stddev_r**2)
-                    )
+                    * np.exp(-1 * (guide_img_ext_center_pix - guide_img_ext_filt_window) ** 2 / (2 * stddev_r**2))
                 )
 
                 # filter output for a window = sum(spatial kernel weights x range kernel weights x
                 # windowed input image) / normalization factor
                 filt_out[i - kern_arm, j - kern_arm] = np.sum(
                     s_kern[0:spatial_kern, 0:spatial_kern]
-                    * np.exp(
-                        -1
-                        * (guide_img_ext_center_pix - guide_img_ext_filt_window) ** 2
-                        / (2 * stddev_r**2)
-                    )
+                    * np.exp(-1 * (guide_img_ext_center_pix - guide_img_ext_filt_window) ** 2 / (2 * stddev_r**2))
                     * in_img_ext_filt_window
                 )
-                filt_out[i - kern_arm, j - kern_arm] = (
-                    filt_out[i - kern_arm, j - kern_arm] / norm_fact
-                )
+                filt_out[i - kern_arm, j - kern_arm] = filt_out[i - kern_arm, j - kern_arm] / norm_fact
 
         return filt_out
 
@@ -383,32 +328,21 @@ class JointBF:
         # check if filter window sizes spatial_kern and range_kern greater than zero and are odd
         if spatial_kern <= 0:
             spatial_kern = 3
-            warnings.warn(
-                "spatial kernel size (spatial_kern) cannot be <= zero, setting it as 3"
-            )
+            warnings.warn("spatial kernel size (spatial_kern) cannot be <= zero, setting it as 3")
         elif spatial_kern % 2 == 0:
-            warnings.warn(
-                "range kernel size (spatial_kern) cannot be even, assigning it an odd value"
-            )
+            warnings.warn("range kernel size (spatial_kern) cannot be even, assigning it an odd value")
             spatial_kern = spatial_kern + 1
 
         if range_kern <= 0:
             range_kern = 3
-            warnings.warn(
-                "range kernel size (range_kern) cannot be <= zero, setting it as 3"
-            )
+            warnings.warn("range kernel size (range_kern) cannot be <= zero, setting it as 3")
         elif range_kern % 2 == 0:
-            warnings.warn(
-                "range kernel size (range_kern) cannot be even, assigning it an odd value"
-            )
+            warnings.warn("range kernel size (range_kern) cannot be even, assigning it an odd value")
             range_kern = range_kern + 1
 
         # check if range_kern > spatial_kern
         if range_kern > spatial_kern:
-            warnings.warn(
-                "range kernel size (range_kern) cannot be more than..."
-                "spatial kernel size (spatial_kern)"
-            )
+            warnings.warn("range kernel size (range_kern) cannot be more than..." "spatial kernel size (spatial_kern)")
             range_kern = spatial_kern
 
         # spawn a NxN gaussian kernel
@@ -418,9 +352,7 @@ class JointBF:
         # padType='constant' => pad value = 0; 'reflect' is more suitable
         pad_len = int((spatial_kern - 1) / 2)
         in_img_ext = np.pad(in_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect")
-        guide_img_ext = np.pad(
-            guide_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect"
-        )
+        guide_img_ext = np.pad(guide_img, ((pad_len, pad_len), (pad_len, pad_len)), "reflect")
 
         filt_out = np.zeros(in_img.shape, dtype=np.float32)
         norm_fact = np.zeros(in_img.shape)
@@ -429,28 +361,16 @@ class JointBF:
         for i in range(spatial_kern):
             for j in range(spatial_kern):
                 # Creating shifted arrays for processing each pixel in the window
-                in_img_ext_array = in_img_ext[
-                    i : i + in_img.shape[0], j : j + in_img.shape[1], ...
-                ]
-                guide_img_ext_array = guide_img_ext[
-                    i : i + in_img.shape[0], j : j + in_img.shape[1], ...
-                ]
+                in_img_ext_array = in_img_ext[i : i + in_img.shape[0], j : j + in_img.shape[1], ...]
+                guide_img_ext_array = guide_img_ext[i : i + in_img.shape[0], j : j + in_img.shape[1], ...]
 
                 # Adding normalization factor for each pixel needed to average out the
                 # final result
-                norm_fact += s_kern[i, j] * np.exp(
-                    -1 * (guide_img - guide_img_ext_array) ** 2 / (2 * stddev_r**2)
-                )
+                norm_fact += s_kern[i, j] * np.exp(-1 * (guide_img - guide_img_ext_array) ** 2 / (2 * stddev_r**2))
 
                 # Summing up the final result
                 sum_filt_out += (
-                    s_kern[i, j]
-                    * np.exp(
-                        -1
-                        * (guide_img - guide_img_ext_array) ** 2
-                        / (2 * stddev_r**2)
-                    )
-                    * in_img_ext_array
+                    s_kern[i, j] * np.exp(-1 * (guide_img - guide_img_ext_array) ** 2 / (2 * stddev_r**2)) * in_img_ext_array
                 )
 
         filt_out = sum_filt_out / norm_fact

@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: oecf.py
 Description: Implements the opto electronic conversion function as a LUT
@@ -34,9 +35,7 @@ class OECF:
         if r_lut is None:
             bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
             max_val = 2**bpp - 1
-            return np.clip(raw, 0, max_val).astype(
-                np.uint32 if max_val > 65535 else np.uint16, copy=False
-            )
+            return np.clip(raw, 0, max_val).astype(np.uint32 if max_val > 65535 else np.uint16, copy=False)
 
         # get config parm
         bayer = self.sensor_info["bayer_pattern"]

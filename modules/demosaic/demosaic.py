@@ -4,6 +4,7 @@ Description: Implements the cfa interpolation algorithms
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import time
 import numpy as np
 from typing import Literal, cast
@@ -16,45 +17,32 @@ from modules.demosaic.malvar_he_cutler import Malvar as MAL
 # Try to import CuPy version
 try:
     from modules.demosaic.malvar_he_cutler_cupy import MalvarCuPy as MALCUPY
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 # Import bilinear demosaic options
-from modules.demosaic.bilinear_demosaic import (
-    BilinearDemosaic as BILINEAR
-)
+from modules.demosaic.bilinear_demosaic import BilinearDemosaic as BILINEAR
 
 # Import VNG demosaic options
-from modules.demosaic.vng_demosaic import (
-    VNGDemosaic as VNG,
-    VNGDemosaicOptimized as VNG_OPT
-)
+from modules.demosaic.vng_demosaic import VNGDemosaic as VNG, VNGDemosaicOptimized as VNG_OPT
 
 # Import Hamilton-Adams demosaic options
-from modules.demosaic.hamilton_adams_demosaic import (
-    HamiltonAdamsDemosaic as HA,
-    HamiltonAdamsOptimized as HA_OPT
-)
+from modules.demosaic.hamilton_adams_demosaic import HamiltonAdamsDemosaic as HA, HamiltonAdamsOptimized as HA_OPT
 
 # Import PPG demosaic options
-from modules.demosaic.ppg_demosaic import (
-    PPGDemosaic as PPG,
-    PPGDemosaicOptimized as PPG_OPT
-)
+from modules.demosaic.ppg_demosaic import PPGDemosaic as PPG, PPGDemosaicOptimized as PPG_OPT
 
 # Import LMMSE demosaic options
 from modules.demosaic.lmmse_demosaic import (
     LMMSEDemosaic as LMMSE,
     LMMSEDemosaicOptimized as LMMSE_OPT,
-    LMMSEDemosaicFast as LMMSE_FAST
+    LMMSEDemosaicFast as LMMSE_FAST,
 )
 
 # Import AHD demosaic options
-from modules.demosaic.ahd_demosaic import (
-    AHDDemosaic as AHD,
-    AHDDemosaicOptimized as AHD_OPT
-)
+from modules.demosaic.ahd_demosaic import AHDDemosaic as AHD, AHDDemosaicOptimized as AHD_OPT
 
 
 class Demosaic:
@@ -86,15 +74,11 @@ class Demosaic:
         # dict will be creating 3 channel boolean type array of given shape with the name
         # tag like 'r_channel': [False False ....] , 'g_channel': [False False ....] ,
         # 'b_channel': [False False ....]
-        channels = dict(
-            (channel, np.zeros(self.img.shape, dtype=bool)) for channel in "rgb"
-        )
+        channels = dict((channel, np.zeros(self.img.shape, dtype=bool)) for channel in "rgb")
 
         # Following comment will create boolean masks for each channel r_channel,
         # g_channel and b_channel
-        for channel, (y_channel, x_channel) in zip(
-            pattern, [(0, 0), (0, 1), (1, 0), (1, 1)]
-        ):
+        for channel, (y_channel, x_channel) in zip(pattern, [(0, 0), (0, 1), (1, 0), (1, 1)]):
             channels[channel][y_channel::2, x_channel::2] = True
 
         # tuple will return 3 channel boolean pattern for r_channel,
@@ -106,7 +90,7 @@ class Demosaic:
     def apply_cfa(self, algorithm: str = "malvar") -> UInt16Image:
         """
         Demosaicing the given raw image using given algorithm
-        
+
         Args:
             algorithm (str): Demosaic algorithm to use
                 - "malvar": Malvar-He-Cutler (default, high quality)
@@ -125,7 +109,7 @@ class Demosaic:
         """
         # 3D masks according to the given bayer
         masks = self.masks_cfa_bayer()
-        
+
         if algorithm == "malvar":
             # Use CuPy version if available and beneficial
             if CUPY_AVAILABLE:
@@ -133,55 +117,55 @@ class Demosaic:
             else:
                 mal = MAL(self.img, masks)
             demos_out = mal.apply_malvar()
-            
+
         elif algorithm == "bilinear":
             bilinear = BILINEAR(self.img, masks)
             demos_out = bilinear.apply_bilinear()
-            
+
         elif algorithm == "vng":
             vng = VNG(self.img, masks)
             demos_out = vng.apply_vng()
-            
+
         elif algorithm == "vng_opt":
             vng_opt = VNG_OPT(self.img, masks)
             demos_out = vng_opt.apply_vng_optimized()
-            
+
         elif algorithm == "hamilton_adams":
             ha = HA(self.img, masks)
             demos_out = ha.apply_hamilton_adams()
-            
+
         elif algorithm == "hamilton_adams_opt":
             ha_opt = HA_OPT(self.img, masks)
             demos_out = ha_opt.apply_hamilton_adams_optimized()
-            
+
         elif algorithm == "ppg":
             ppg = PPG(self.img, masks)
             demos_out = ppg.apply_ppg()
-            
+
         elif algorithm == "ppg_opt":
             ppg_opt = PPG_OPT(self.img, masks)
             demos_out = ppg_opt.apply_ppg_optimized()
-            
+
         elif algorithm == "lmmse":
             lmmse = LMMSE(self.img, masks)
             demos_out = lmmse.apply_lmmse()
-            
+
         elif algorithm == "lmmse_opt":
             lmmse_opt = LMMSE_OPT(self.img, masks)
             demos_out = lmmse_opt.apply_lmmse_optimized()
-            
+
         elif algorithm == "lmmse_fast":
             lmmse_fast = LMMSE_FAST(self.img, masks)
             demos_out = lmmse_fast.apply_lmmse_fast()
-            
+
         elif algorithm == "ahd":
             ahd = AHD(self.img, masks)
             demos_out = ahd.apply_ahd()
-            
+
         elif algorithm == "ahd_opt":
             ahd_opt = AHD_OPT(self.img, masks)
             demos_out = ahd_opt.apply_ahd_optimized()
-            
+
         else:
             raise ValueError(f"Unknown demosaic algorithm: {algorithm}")
 
@@ -209,7 +193,7 @@ class Demosaic:
     def execute(self, algorithm: str | None = None) -> UInt16Image:
         """
         Applying demosaicing to bayer image
-        
+
         Args:
             algorithm (str, optional): Demosaic algorithm to use. If None, uses algorithm from config.
                 - "malvar": Malvar-He-Cutler (default, high quality)
@@ -229,7 +213,7 @@ class Demosaic:
         # Use algorithm from config if not specified
         if algorithm is None:
             algorithm = self.algorithm
-            
+
         self.logger.info(f"CFA interpolation using {algorithm} algorithm")
         start = time.time()
         cfa_out = self.apply_cfa(algorithm)

@@ -1,0 +1,295 @@
+# Merge base for SDR-style pipeline (e.g. 8-bit packed Bayer without HDR companding).
+# Use explicit [base_sdr.yml, overlay.yml] in load_config, or extend pipeline_config_paths if you add *_sdr_cam.yml.
+# Override per camera: platform.filename, sensor_info, and calibrated blocks as needed.
+
+platform:
+  filename: "frame_0000.raw"
+  disable_progress_bar: false
+  leave_pbar_string: false
+  render_3a: false
+  # npy, png or both
+  save_format: png
+  short_output_names: true  # compact filenames: {in_file}_{timestamp}.png
+  # skip_disabled_modules: true  # skip instantiating disabled modules (performance)
+  # Global debug settings
+  debug_enabled: true # Set to true to enable debug logging
+  debug_log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  debug_log_file: null  # Set to filename to save logs to file (e.g., "isp_debug.log")
+  # Histogram debug settings
+  plot_histograms: true  # Plot histograms of input (after decompanding) and output images
+  histogram_show_log: true  # Show log scale histograms in addition to linear
+  histogram_show_channels: false  # For output RGB, show separate R/G/B histograms
+
+sensor_info:
+  bayer_pattern: "rggb"
+  range: 256
+  hdr_bit_depth: 8
+  bit_depth: 8
+  pipeline_rgb_bit_depth: 16  # RGB stages (demosaic→CCM→CSC→YUV processing→RGB conversion→gamma)
+  width: 4096
+  height: 2160
+  output_bit_depth: 8
+  sensor: "SVS"
+  endian_type: "ieee-be"
+  # brilliantISP picks raw layout from file size where possible; set data_format for clarity.
+  data_format: "uint8"
+  embedded_rows_top: 0
+  embedded_rows_bottom: 0
+
+
+# Off for typical SDR sensors; same key shape as base_hdr for merge overlays.
+companding:
+  is_enable: false
+  is_debug: false
+  pre_linearization_black_level: 0
+  post_linearization_black_level: 0
+  companded: true
+  companded_pin: [1, 256, 512, 831, 994, 1319, 1984, 2530, 2871, 2968, 3258, 3541, 3855]
+  companded_pout: [1, 256, 1024, 3900, 7800, 23400, 87315, 174630, 349260, 548241, 1736000, 5208000, 16777200]
+  is_save: false
+
+crop:
+  is_enable: false
+  is_debug: false
+  crop_x_start: 0
+  crop_y_start: 0
+  new_width: 1920
+  new_height: 1536
+  is_save: false  
+
+dead_pixel_correction: 
+  is_enable: false
+  dp_threshold: 64
+  is_debug: true
+  is_save: false
+
+black_level_correction:
+  is_enable: false
+  r_offset: 0
+  gr_offset: 0
+  gb_offset: 0
+  b_offset: 0
+  is_linear: false # to do - add linearization
+  r_sat: 4095
+  gr_sat: 4095
+  gb_sat: 4095
+  b_sat: 4095
+  is_save: false
+
+oecf:
+  is_enable: false
+  # Make sure the LUT has the right bit range i.e. if image is of 10 bit LUT should be from [0 - (2^10)-1]
+  # LUT here does nothing to the sensor response i.e. a value of 800 maps to 800 and 2000 maps to 2000  
+  
+  is_save: false
+
+digital_gain:
+  is_debug: false
+  is_auto: false
+  is_enable: false
+  # Array of pre-define Gains
+  gain_array: [1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
+  # Index of default gain
+  current_gain: 1
+  ae_feedback: 0
+  is_save: false
+
+# If you see a vertical color seam or split tones, try is_enable: false — k1/k2 below are huge vs the 0.1–0.4 range in the comment block (possible config typo).
+lens_shading_correction:
+  is_enable: false
+  is_save: false
+  # Radial polynomial: gain(r) = 1 + k1*r² + k2*r⁴; r=0 at center, 1 at corners
+  # Increase k1/k2 to correct stronger vignetting (typical: k1 0.1-0.4, k2 0.05-0.2)
+  r_k1: 0.15
+  r_k2: 0.08
+  gr_k1: 0.12
+  gr_k2: 0.06
+  gb_k1: 0.12
+  gb_k2: 0.06
+  b_k1: 0.15
+  b_k2: 0.08
+
+bayer_noise_reduction:
+  is_enable: true
+  filter_window: 9
+  r_std_dev_s: 1
+  r_std_dev_r: 0.1
+  g_std_dev_s: 1
+  g_std_dev_r: 0.08
+  b_std_dev_s: 1
+  b_std_dev_r: 0.1
+  is_save: false
+
+# White balance: AWB estimates R/B gains per frame when auto_white_balance.is_enable.
+# white_balance applies those gains (or manual r_gain/b_gain when AWB is off). is_auto is synced from AWB at load.
+auto_white_balance:
+  is_enable: false
+  is_debug: false
+  underexposed_percentage: 0.01
+  overexposed_percentage: 0.01
+  algorithm: "pca"
+  # grey_world, norm_2, pca
+  percentage: 3.5 # pca
+
+white_balance:
+  is_enable: true
+  is_debug: false
+  r_gain: 1.0
+  b_gain: 1.0
+  is_save: false
+
+demosaic:
+  is_save: false
+  # Algorithm selection:
+  # - "bilinear": Simple bilinear interpolation (medium speed, good quality)
+  # - "malvar": Malvar-He-Cutler (default, high quality, slower)
+  # - "vng_opt": Variable Number of Gradients (high quality, slower)
+  # - "hamilton_adams": Hamilton Adams (high quality, slower)
+  # - "ppg": Pixel Pattern Gradient (high quality, slower)
+  # - "ahd": Adaptive Homogeneity-Directed (high quality, slower)
+  # - "lmmse": Least Mean Square Error (high quality, slower)
+  algorithm: "malvar"
+
+color_correction_matrix:
+  #Row sum to 1 convention
+  is_enable: true
+  corrected_red: [1.0, 0.0, 0.0]
+  corrected_green: [0.0, 1.0, 0.0]
+  corrected_blue: [0.0, 0.0, 1.0]
+  is_save: false
+
+gamma_correction:
+  is_enable: true
+  is_save: false
+  curve: 'srgb'   # 'gamma' (power) or 'srgb'
+  gamma: 2.2       # Used when curve='gamma'
+
+auto_exposure:
+  is_enable: false
+  is_debug: false
+  center_illuminance: 90
+  histogram_skewness: 0.9
+  # exposure_correction_mode: step   # or direct: pick gain index from meter in one shot (needs digital_gain is_auto)
+  # target_luminance:               # optional target; fraction [0,1] vs meter full scale, or absolute if >1
+  # rerun_from_digital_gain: true  # default for direct: second pass applies pass-1 index; false = state-only for next run
+
+color_space_conversion: 
+  conv_standard: 2
+  # Bt.709 HD =   1
+  # Bt.601/4407 = 2
+  is_save: false
+
+color_saturation_enhancement:
+  is_enable: true
+  saturation_gain: 1.0
+
+ldci:
+  is_enable: false
+  clip_limit: 2.0
+  wind: 16
+  is_save: false
+
+sharpen:
+  is_enable: false
+  sharpen_sigma: 5.0
+  sharpen_strength: 1.0
+  is_save: false
+
+2d_noise_reduction:
+  is_enable: false
+  # nlm
+  window_size: 9
+  patch_size: 5
+  wts: 10
+  is_save: false
+  
+rgb_conversion:
+  is_enable: true
+  is_save: false
+
+scale:
+  is_enable: false
+  is_debug: false
+  new_width: 1920
+  new_height: 1080   
+  is_hardware: true
+  # Nearest_Neighbor # Bilinear
+  algorithm: "Nearest_Neighbor"
+  upscale_method: "Nearest_Neighbor"
+  downscale_method: "Bilinear"  
+  is_save: false
+
+yuv_conversion_format:
+  # The conversion wont run if csc is false
+  is_enable: false
+  conv_type: '444'
+  is_save: false
+  
+tone_mapping:
+  # SDR default: tone mapper off; same keys/shape as base_hdr for overlays.
+  is_enable: false
+  tone_mapping_before_demosaic: false
+  tone_mapper: 'reinhard_integer'
+  is_save: false
+
+# Reinhard global operator (integer implementation)
+# Based on Reinhard et al. 2002 "Photographic Tone Reproduction for Digital Images"
+reinhard_integer:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  knee: 0.25      # Reinhard white point; larger = more highlight compression
+  strength: 1.5  # Modulates white point scaling
+  normalize_output: true  # Scale output to use full range (compensates for white point)
+
+# ACES integer/LUT tone mapping (production-style)
+aces_integer:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_adjustment: 0.0  # EV
+  gamma: 2.4
+  apply_odt_gamma: true
+  use_normalization: false   # Per-image min-max (matches float ACES, fixes washout)
+  normalize_output: false  # Scale output to use full range (compensates for LUT limits)
+  hdr_scale: 6.0        # Higher = more compression; 10.0 = very compressed
+
+# Durand: float, local TMO (used when tone_mapper: 'durand')
+hdr_durand:
+  is_enable: false
+  is_save: false
+  is_debug: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  sigma_space: 8.0
+  sigma_color: 8.0
+  contrast_factor: 2.0
+  downsample_factor: 4
+  
+# Hable (Uncharted 2) filmic tone mapping (float)
+hable:
+  is_enable: false
+  is_save: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_bias: 2.0    # Exposure adjustment (higher = brighter)
+  white_point: 11.2     # White point (Hable default)
+
+# Hable integer/LUT tone mapping (production-style)
+hable_integer:
+  is_enable: true
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  exposure_bias: 4.0
+  white_point: 11.2
+  use_normalization: true   # Per-image min-max
+  normalize_output: true   # Scale output to use full range (compensates for LUT limits)
+  hdr_scale: 2.0       # Lower = more compression
+
+# ACES Tone Mapping Configuration
+aces:
+  is_enable: false
+  is_save: false
+  is_debug: false
+  is_plot_curve: false  # Set to true to plot and save the tone mapping curve
+  # ACES variant: 'fitted' (faster, default) or 'full' (more accurate)
+  variant: 'fitted'
+  # Exposure adjustment in stops (0 = no adjustment)
+  exposure_adjustment: 0.0
+  # Output transform: 'sRGB' or 'Rec709'
+  output_transform: 'sRGB'

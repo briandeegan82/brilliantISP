@@ -5,6 +5,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import numpy as np
 from scipy import ndimage
@@ -15,25 +16,22 @@ from util.isp_types import NoiseReduction2DConfig, PlatformConfig, SensorInfo
 
 # Import GPU utilities with fallback
 try:
-    from util.gpu_utils import (
-        is_gpu_available, should_use_gpu, gpu_filter2d, 
-        gpu_gaussian_blur, to_umat, from_umat
-    )
+    from util.gpu_utils import is_gpu_available, should_use_gpu, gpu_filter2d, gpu_gaussian_blur, to_umat, from_umat
+
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
+
     # Fallback functions for CPU-only systems
     def is_gpu_available() -> bool:
         return False
-    
+
     def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
         return False
-    
-    def gpu_filter2d(
-        img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True
-    ) -> np.ndarray:
+
+    def gpu_filter2d(img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return cv2.filter2D(img, -1, kernel)
-    
+
     def gpu_gaussian_blur(
         img: np.ndarray,
         ksize: tuple[int, int],
@@ -42,10 +40,10 @@ except ImportError:
         use_gpu: bool = True,
     ) -> np.ndarray:
         return cv2.GaussianBlur(img, ksize, sigma_x, sigmaY=sigma_y)
-    
+
     def to_umat(img: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return img
-    
+
     def from_umat(umat_or_array: np.ndarray) -> np.ndarray:
         return umat_or_array
 
@@ -69,11 +67,10 @@ class NLMOptimized:
         self.is_progress = platform["disable_progress_bar"]
         self.is_leave = platform["leave_pbar_string"]
         self.logger = logging.getLogger(__name__)
-        
+
         # Check if GPU acceleration should be used
-        self.use_gpu = (is_gpu_available() and 
-                       should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
-        
+        self.use_gpu = is_gpu_available() and should_use_gpu((sensor_info["height"], sensor_info["width"]), "filter2d")
+
         if self.use_gpu:
             self.logger.info("  Using GPU acceleration for Non-local Means")
         else:
@@ -97,9 +94,7 @@ class NLMOptimized:
 
         return lut.astype(np.int32)
 
-    def apply_mean_filter_optimized(
-        self, array: np.ndarray, patch_size: int
-    ) -> np.ndarray:
+    def apply_mean_filter_optimized(self, array: np.ndarray, patch_size: int) -> np.ndarray:
         """
         Optimized mean filter using NumPy operations
         """
@@ -113,7 +108,7 @@ class NLMOptimized:
         CPU implementation of mean filter using NumPy
         """
         # Use uniform filter for mean calculation (much faster than manual loops)
-        return ndimage.uniform_filter(array, size=patch_size, mode='reflect')
+        return ndimage.uniform_filter(array, size=patch_size, mode="reflect")
 
     def apply_mean_filter_gpu(self, array: np.ndarray, patch_size: int) -> np.ndarray:
         """
@@ -122,21 +117,21 @@ class NLMOptimized:
         try:
             # Convert to GPU
             gpu_array = to_umat(array, use_gpu=True)
-            
+
             # Create uniform kernel for mean filtering
             kernel_size = patch_size
             if kernel_size % 2 == 0:
                 kernel_size += 1
-            
+
             # Create uniform kernel
             kernel = np.ones((kernel_size, kernel_size), dtype=np.float32) / (kernel_size * kernel_size)
             gpu_kernel = to_umat(kernel, use_gpu=True)
-            
+
             # Apply filtering
             gpu_result = gpu_filter2d(gpu_array, gpu_kernel, use_gpu=True)
-            
+
             return from_umat(gpu_result)
-            
+
         except Exception as e:
             self.logger.warning(f"  GPU mean filter failed, falling back to CPU: {e}")
             return self.apply_mean_filter_cpu(array, patch_size)
@@ -179,37 +174,33 @@ class NLMOptimized:
 
         # OPTIMIZATION: Use NumPy broadcast operations for better performance
         # Pre-calculate all shifted arrays and process them efficiently
-        
+
         # Create arrays for all window positions at once
         window_positions = []
         for i in range(window_size):
             for j in range(window_size):
-                shifted_array = np.int32(
-                    wtspadded_y_in[
-                        i : i + input_image.shape[0], j : j + input_image.shape[1]
-                    ]
-                )
+                shifted_array = np.int32(wtspadded_y_in[i : i + input_image.shape[0], j : j + input_image.shape[1]])
                 window_positions.append(shifted_array)
-        
+
         # Convert to 3D array for vectorized processing
         window_positions = np.array(window_positions)  # Shape: (window_size^2, height, width)
-        
+
         # Process all positions at once using broadcasting
         for idx, array_for_each_pixel_in_sw in enumerate(window_positions):
             # Finding euclidean distance between pixels based on their intensities
             # OPTIMIZATION: Use vectorized operations
             euc_distance = (input_image - array_for_each_pixel_in_sw) ** 2
-            
+
             # Apply mean filter
             distance = self.apply_mean_filter_optimized(euc_distance, patch_size=patch_size)
-            
+
             # Assigning weights to the pixels based on their distance
             # OPTIMIZATION: Use vectorized indexing
             weight_for_each_shifted_array = weights_lut[distance]
-            
+
             # Adding up all the weighted similar pixels
             denoised_y_channel += array_for_each_pixel_in_sw * weight_for_each_shifted_array
-            
+
             # Adding up all the weights for final mean values at each pixel location
             final_weights += weight_for_each_shifted_array
 
@@ -267,26 +258,26 @@ class NLMOptimized:
 
         # OPTIMIZATION: Use sliding window view for better memory efficiency
         from numpy.lib.stride_tricks import sliding_window_view
-        
+
         # Create sliding window view of the padded image
         # This creates a view without copying data
         window_view = sliding_window_view(wtspadded_y_in, (input_image.shape[0], input_image.shape[1]))
-        
+
         # Process each window position
         for i in range(window_size):
             for j in range(window_size):
                 # Extract shifted array using the window view
                 array_for_each_pixel_in_sw = np.int32(window_view[i, j])
-                
+
                 # Calculate euclidean distance
                 euc_distance = (input_image - array_for_each_pixel_in_sw) ** 2
-                
+
                 # Apply mean filter
                 distance = self.apply_mean_filter_optimized(euc_distance, patch_size=patch_size)
-                
+
                 # Get weights
                 weight_for_each_shifted_array = weights_lut[distance]
-                
+
                 # Accumulate results
                 denoised_y_channel += array_for_each_pixel_in_sw * weight_for_each_shifted_array
                 final_weights += weight_for_each_shifted_array
@@ -312,7 +303,7 @@ class NLMOptimized:
         # For smaller images, use the standard optimized version
         # For larger images, use the vectorized version if available
         try:
-            if hasattr(np.lib.stride_tricks, 'sliding_window_view'):
+            if hasattr(np.lib.stride_tricks, "sliding_window_view"):
                 return self.apply_nlm_vectorized()
             else:
                 return self.apply_nlm_optimized()

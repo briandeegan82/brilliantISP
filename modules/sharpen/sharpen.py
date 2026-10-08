@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: sharpen.py
 Description: Implements sharpening for Brilliant-ISP with GPU acceleration.
@@ -13,6 +14,7 @@ from modules.sharpen.unsharp_masking import UnsharpMasking as USM
 # Try to import GPU-accelerated version
 try:
     from modules.sharpen.unsharp_masking_gpu import UnsharpMaskingGPU as USMGPU
+
     GPU_VERSION_AVAILABLE = True
 except ImportError:
     GPU_VERSION_AVAILABLE = False
@@ -43,14 +45,14 @@ class Sharpening:
         self.conv_std = conv_std
         # Initialize debug logger
         self.logger = get_debug_logger("Sharpening", config=self.platform)
-        
+
         # Check if GPU acceleration should be used
         self.use_gpu = False
         if GPU_VERSION_AVAILABLE:
             try:
                 from util.gpu_utils import is_gpu_available, should_use_gpu
-                self.use_gpu = (is_gpu_available() and 
-                               should_use_gpu((img.shape[0], img.shape[1]), 'gaussian_blur'))
+
+                self.use_gpu = is_gpu_available() and should_use_gpu((img.shape[0], img.shape[1]), "gaussian_blur")
             except ImportError:
                 self.use_gpu = False
 
@@ -61,15 +63,11 @@ class Sharpening:
         """
         if self.use_gpu and GPU_VERSION_AVAILABLE:
             # Use GPU-accelerated version
-            usm = USMGPU(
-                self.img, self.parm_sha["sharpen_sigma"], self.parm_sha["sharpen_strength"]
-            )
+            usm = USMGPU(self.img, self.parm_sha["sharpen_sigma"], self.parm_sha["sharpen_strength"])
         else:
             # Use CPU version
-            usm = USM(
-                self.img, self.parm_sha["sharpen_sigma"], self.parm_sha["sharpen_strength"]
-            )
-        
+            usm = USM(self.img, self.parm_sha["sharpen_sigma"], self.parm_sha["sharpen_strength"])
+
         return usm.apply_sharpen()
 
     def save(self) -> None:

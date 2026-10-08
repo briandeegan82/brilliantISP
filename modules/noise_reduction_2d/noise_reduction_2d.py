@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: noise_reduction_2d.py
 Description: Apply denoising algorithms on luminance channel with NumPy optimizations
@@ -14,6 +15,7 @@ from util.isp_types import NoiseReduction2DConfig, PlatformConfig, SensorInfo
 # Try to import optimized version with NumPy broadcast
 try:
     from modules.noise_reduction_2d.non_local_means_optimized import NLMOptimized as NLMOPT
+
     OPTIMIZED_VERSION_AVAILABLE = True
 except ImportError:
     OPTIMIZED_VERSION_AVAILABLE = False
@@ -58,7 +60,7 @@ class NoiseReduction2d:
             # Use original version
             self.logger.info("  Using original Non-local Means")
             nlm = NLM(self.img, self.sensor_info, self.parm_2dnr, self.platform)
-        
+
         return nlm.apply_nlm()
 
     def save(self) -> None:

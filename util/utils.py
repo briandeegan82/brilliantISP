@@ -17,7 +17,6 @@ from scipy.signal import correlate2d
 import matplotlib.pyplot as plt
 from modules.demosaic.malvar_he_cutler import Malvar as MAL
 
-
 # Brilliant-ISP output directory
 OUTPUT_DIR = "out_frames/"
 
@@ -26,7 +25,6 @@ OUTPUT_ARRAY_DIR = "./module_output/"
 
 
 def introduce_defect(img, total_defective_pixels, padding):
-
     """
     This function randomly replaces pixels values with extremely high or low
     pixel values to create dead pixels (Dps).
@@ -58,9 +56,7 @@ def introduce_defect(img, total_defective_pixels, padding):
             random.randrange(4081, 4095),
         ]  # stuck low int b/w 1 and 15, stuck high float b/w 4081 and 4095
         defect_val = defect[random.randint(0, 1)]
-        random_row, random_col = random.randint(2, img.shape[0] - 3), random.randint(
-            2, img.shape[1] - 3
-        )
+        random_row, random_col = random.randint(2, img.shape[0] - 3), random.randint(2, img.shape[1] - 3)
         left, right = (
             orig_val[random_row, random_col - 2],
             orig_val[random_row, random_col + 2],
@@ -108,12 +104,7 @@ def gauss_kern_raw(size, std_dev, stride):
     for i in range(0, size):
         for j in range(0, size):
             out_kern[i, j] = np.exp(
-                -1
-                * (
-                    (stride * (i - ((size - 1) / 2))) ** 2
-                    + (stride * (j - ((size - 1) / 2))) ** 2
-                )
-                / (2 * (std_dev**2))
+                -1 * ((stride * (i - ((size - 1) / 2))) ** 2 + (stride * (j - ((size - 1) / 2))) ** 2) / (2 * (std_dev**2))
             )
 
     sum_kern = np.sum(out_kern)
@@ -123,7 +114,6 @@ def gauss_kern_raw(size, std_dev, stride):
 
 
 def crop(img, rows_to_crop=0, cols_to_crop=0):
-
     """
     Crop 2D array.
     Parameter:
@@ -151,9 +141,7 @@ def crop(img, rows_to_crop=0, cols_to_crop=0):
 
 def stride_convolve2d(matrix, kernel):
     """2D convolution"""
-    return correlate2d(matrix, kernel, mode="valid")[
-        :: kernel.shape[0], :: kernel.shape[1]
-    ]
+    return correlate2d(matrix, kernel, mode="valid")[:: kernel.shape[0], :: kernel.shape[1]]
 
 
 def display_ae_statistics(ae_feedback, awb_gains, logger=None):
@@ -253,7 +241,6 @@ def save_pipeline_output(img_name, output_img, config_file, outFileName, output_
 
 # utilities to save the config_automate exactly as config.yml
 class CustomDumper(yaml.Dumper):
-
     """This class is a custom YAML dumper that overrides the default behavior
     of the increase_indent and write_line_break methods. It ensures that indentations
     and line breaks are inserted correctly in the output YAML file."""
@@ -275,9 +262,7 @@ def represent_list(self, data):
     return self.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
 
 
-def save_output_array(
-    img_name, output_array, module_name, platform, bitdepth, bayer_pattern
-):
+def save_output_array(img_name, output_array, module_name, platform, bitdepth, bayer_pattern):
     """
     Saves output array [raw/rgb] for pipline modules
     """
@@ -311,7 +296,6 @@ def save_output_array(
 
 
 def save_output_array_yuv(img_name, output_array, module_name, platform, conv_std):
-
     """
     Saves output array [yuv] for pipline modules
     """

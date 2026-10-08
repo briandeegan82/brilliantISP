@@ -6,6 +6,7 @@ Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import numpy as np
 from numba import jit, prange
@@ -17,6 +18,7 @@ from util.isp_types import DeadPixelCorrectionConfig, RawBayerImage, SensorInfo
 # Try to import Numba, fall back to CPU if not available
 try:
     from numba import jit, prange
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -41,7 +43,7 @@ class DynamicDPCNumba:
         self.threshold = parm_dpc["dp_threshold"]
         self.is_debug = parm_dpc["is_debug"]
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
-        
+
         self._log = logging.getLogger(__name__)
         if self.use_numba:
             self._log.info("  Using Numba-optimized dead pixel correction")
@@ -52,7 +54,7 @@ class DynamicDPCNumba:
         """Determine if Numba optimization should be used based on image size."""
         if not NUMBA_AVAILABLE:
             return False
-        
+
         # Use Numba for images larger than 500K pixels
         image_size = self.img.shape[0] * self.img.shape[1]
         return image_size > 500000  # 500K threshold
@@ -73,30 +75,27 @@ class DynamicDPCNumba:
         Numba-optimized correction application (the most compute-intensive part)
         """
         corrected_img = np.copy(img)
-        
+
         for i in prange(2, height - 2):
             for j in range(2, width - 2):
                 if detection_mask[i, j] == 1:
                     # Find minimum gradient direction
-                    gradients = np.array([
-                        vertical_grad[i, j],
-                        horizontal_grad[i, j],
-                        left_diagonal_grad[i, j],
-                        right_diagonal_grad[i, j]
-                    ])
-                    
+                    gradients = np.array(
+                        [vertical_grad[i, j], horizontal_grad[i, j], left_diagonal_grad[i, j], right_diagonal_grad[i, j]]
+                    )
+
                     min_grad_idx = np.argmin(gradients)
-                    
+
                     # Compute correction based on minimum gradient direction
                     if min_grad_idx == 0:  # Vertical
-                        corrected_img[i, j] = (img[i-2, j] + img[i+2, j]) / 2.0
+                        corrected_img[i, j] = (img[i - 2, j] + img[i + 2, j]) / 2.0
                     elif min_grad_idx == 1:  # Horizontal
-                        corrected_img[i, j] = (img[i, j-2] + img[i, j+2]) / 2.0
+                        corrected_img[i, j] = (img[i, j - 2] + img[i, j + 2]) / 2.0
                     elif min_grad_idx == 2:  # Left diagonal
-                        corrected_img[i, j] = (img[i-2, j+2] + img[i+2, j-2]) / 2.0
+                        corrected_img[i, j] = (img[i - 2, j + 2] + img[i + 2, j - 2]) / 2.0
                     else:  # Right diagonal
-                        corrected_img[i, j] = (img[i-2, j-2] + img[i+2, j+2]) / 2.0
-        
+                        corrected_img[i, j] = (img[i - 2, j - 2] + img[i + 2, j + 2]) / 2.0
+
         return corrected_img
 
     def dynamic_dpc_numba(self) -> RawBayerImage:
@@ -105,7 +104,7 @@ class DynamicDPCNumba:
         Uses NumPy for optimized operations, Numba for custom logic
         """
         from scipy.ndimage import maximum_filter, minimum_filter, correlate
-        
+
         height, width = self.sensor_info["height"], self.sensor_info["width"]
 
         # Use NumPy's optimized operations for the heavy lifting
@@ -125,9 +124,7 @@ class DynamicDPCNumba:
         min_value = minimum_filter(self.img, footprint=window, mode="mirror")
 
         # Condition 1: center_pixel needs to be corrected if it lies outside the interval
-        mask_cond1 = (
-            np.where((min_value > self.img) | (self.img > max_value), True, False)
-        ).astype("int32")
+        mask_cond1 = (np.where((min_value > self.img) | (self.img > max_value), True, False)).astype("int32")
 
         # Condition 2: Use NumPy's optimized correlate for gradient computation
         # Kernels to compute the difference between center pixel and each of the 8 neighbours
@@ -313,8 +310,7 @@ class DynamicDPCNumba:
 
         # Use Numba for the final correction application (most compute-intensive part)
         corrected_img = self.fast_correction_application_numba(
-            self.img, detection_mask, vertical_grad, horizontal_grad,
-            left_diagonal_grad, right_diagonal_grad, height, width
+            self.img, detection_mask, vertical_grad, horizontal_grad, left_diagonal_grad, right_diagonal_grad, height, width
         )
 
         # Debug information
@@ -335,6 +331,7 @@ class DynamicDPCNumba:
         """
         # Import the original implementation
         from modules.dead_pixel_correction.dynamic_dpc import DynamicDPC
+
         dpc = DynamicDPC(
             self.img,
             self.sensor_info,

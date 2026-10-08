@@ -30,8 +30,9 @@ The following keys are read by both systems with matching intent:
 - `sensor_info.hdr_bit_depth`, `sensor_info.bayer_pattern`,
   `sensor_info.endian_type`, `sensor_info.data_format`
 - `crop.*` core fields (`is_enable`, starts, size)
-- `companding.is_enable`, `companding.pedestal`, `companding.companded_pin`,
-  `companding.companded_pout`
+- `companding.is_enable`, `companding.pre_linearization_black_level`,
+  `companding.post_linearization_black_level` (legacy `pedestal` aliases pre),
+  `companding.companded_pin`, `companding.companded_pout`
 - `dead_pixel_correction.is_enable`, `dead_pixel_correction.dp_threshold`
 - `black_level_correction` offsets (`r_offset`, `gr_offset`, `gb_offset`,
   `b_offset`)
