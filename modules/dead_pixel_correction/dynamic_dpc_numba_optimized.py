@@ -6,6 +6,7 @@ Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import numpy as np
 from util.debug_utils import get_debug_logger
@@ -18,6 +19,7 @@ from typing import cast
 # Try to import Numba, fall back to CPU if not available
 try:
     from numba import njit, prange
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -55,14 +57,12 @@ class DynamicDPCNumbaOptimized:
         """Determine if Numba optimization should be used based on image size."""
         if not NUMBA_AVAILABLE:
             return False
-        
+
         # Use Numba for images larger than 500K pixels
         image_size = self.img.shape[0] * self.img.shape[1]
         return image_size > 500000  # 500K threshold
 
-    def dynamic_dpc(
-        self, return_mask: bool = False
-    ) -> RawBayerImage | tuple[RawBayerImage, np.ndarray]:
+    def dynamic_dpc(self, return_mask: bool = False) -> RawBayerImage | tuple[RawBayerImage, np.ndarray]:
         height, width = self.sensor_info["height"], self.sensor_info["width"]
 
         # Define 5x5 neighborhood footprint (cross-like)
@@ -84,16 +84,9 @@ class DynamicDPCNumbaOptimized:
         mask_cond1 = (self.img < min_value) | (self.img > max_value)
 
         # Condition 2: pixel differs from all neighbors by > threshold
-        neighbor_offsets = [
-            (-1, -1), (-1, 0), (-1, 1),
-            (0, -1),           (0, 1),
-            (1, -1),  (1, 0),  (1, 1)
-        ]
+        neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
-        diffs = [
-            np.abs(self.img - np.roll(np.roll(self.img, dy, axis=0), dx, axis=1))
-            for dy, dx in neighbor_offsets
-        ]
+        diffs = [np.abs(self.img - np.roll(np.roll(self.img, dy, axis=0), dx, axis=1)) for dy, dx in neighbor_offsets]
         diff_array = np.stack(diffs, axis=2)
         mask_cond2 = np.all(diff_array > self.threshold, axis=2)
 
@@ -113,23 +106,37 @@ class DynamicDPCNumbaOptimized:
         # Directional means (2-neighbor average)
         mean_v = (np.roll(self.img, -2, axis=0) + np.roll(self.img, 2, axis=0)) / 2
         mean_h = (np.roll(self.img, -2, axis=1) + np.roll(self.img, 2, axis=1)) / 2
-        mean_ld = (np.roll(np.roll(self.img, -2, axis=0), -2, axis=1) +
-                   np.roll(np.roll(self.img, 2, axis=0), 2, axis=1)) / 2
-        mean_rd = (np.roll(np.roll(self.img, -2, axis=0), 2, axis=1) +
-                   np.roll(np.roll(self.img, 2, axis=0), -2, axis=1)) / 2
+        mean_ld = (np.roll(np.roll(self.img, -2, axis=0), -2, axis=1) + np.roll(np.roll(self.img, 2, axis=0), 2, axis=1)) / 2
+        mean_rd = (np.roll(np.roll(self.img, -2, axis=0), 2, axis=1) + np.roll(np.roll(self.img, 2, axis=0), -2, axis=1)) / 2
 
         # Apply correction with Numba kernel (only the compute-intensive part)
         if self.use_numba:
             corrected_img = _apply_correction_numba(
-                self.img, detection_mask, min_grad,
-                vertical_grad, horizontal_grad, left_diag_grad, right_diag_grad,
-                mean_v, mean_h, mean_ld, mean_rd
+                self.img,
+                detection_mask,
+                min_grad,
+                vertical_grad,
+                horizontal_grad,
+                left_diag_grad,
+                right_diag_grad,
+                mean_v,
+                mean_h,
+                mean_ld,
+                mean_rd,
             )
         else:
             corrected_img = _apply_correction_cpu(
-                self.img, detection_mask, min_grad,
-                vertical_grad, horizontal_grad, left_diag_grad, right_diag_grad,
-                mean_v, mean_h, mean_ld, mean_rd
+                self.img,
+                detection_mask,
+                min_grad,
+                vertical_grad,
+                horizontal_grad,
+                left_diag_grad,
+                right_diag_grad,
+                mean_v,
+                mean_h,
+                mean_ld,
+                mean_rd,
             )
 
         # Insert corrected pixels into image
@@ -157,6 +164,7 @@ class DynamicDPCNumbaOptimized:
         """
         # Import the original implementation
         from modules.dead_pixel_correction.dynamic_dpc import DynamicDPC
+
         if self.bpp > 16:
             cpu_input = cast(RawBayerImage, self.img.astype(np.uint32))
         else:
@@ -241,4 +249,3 @@ def _apply_correction_cpu(
                 else:
                     corrected_img[y, x] = mean_rd[y, x]
     return corrected_img
-

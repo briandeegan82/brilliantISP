@@ -5,6 +5,7 @@ Code / Paper  Reference: https://www.sciencedirect.com/science/article/abs/pii/0
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 
 """
+
 import numpy as np
 
 
@@ -47,9 +48,7 @@ class PCAIlluminEstimation:
         index = int(np.ceil(size * (self.pixel_percentage / 100)))
 
         # Index of selective pixels (dark and light) is obtained
-        filtered_index = np.concatenate(
-            (sorted_data[0:index], sorted_data[-index:None])
-        )
+        filtered_index = np.concatenate((sorted_data[0:index], sorted_data[-index:None]))
         # Selective pixels are retreived on the basis of index from 'data' array
         filtered_data = flat_img[filtered_index, :].astype(np.float32)
 

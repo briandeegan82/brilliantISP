@@ -5,6 +5,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import os
 import time
@@ -17,118 +18,109 @@ from util.config_merge import load_merged_yaml, pipeline_config_paths
 # Module logger
 _log = logging.getLogger(__name__)
 
-# Configuration
+# Configuration — working with hdr_mode and SVS_cam.yml
 RAW_DATA = "./in_frames/hdr_mode/"
-FILENAME = 'svs_uog.raw'
+FILENAME = "FV.raw"
 OUTPUT_BASE_PATH = "./out_frames/multiple_configs/"
 
-# List of configuration files to test
+# Active YAML in config/. Camera overlays (*_cam.yml) merge on top of base_hdr.yml.
+# Unused camera YAMLs live in config/unused/.
 CONFIG_FILES = [
-    "svs_cam.yml"
+    "SVS_cam.yml",
 ]
 
 # Alternative: Define specific configurations to test
 CUSTOM_CONFIGS = {
     "sharpen_1": {
-        "base_config": "svs_cam.yml",
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 4.0
-            },
-        }
+            "sharpen": {"saturation_gain": 4.0},
         },
-        "sharpen_2": {
-        "base_config": "svs_cam.yml",
+    },
+    "sharpen_2": {
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 5.0
-            },
-        }
+            "sharpen": {"saturation_gain": 5.0},
         },
-        "sharpen_3": {
-        "base_config": "svs_cam.yml",
+    },
+    "sharpen_3": {
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 6.0
-            },
-        }
+            "sharpen": {"saturation_gain": 6.0},
         },
-        "sharpen_4": {
-        "base_config": "svs_cam.yml",
+    },
+    "sharpen_4": {
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 7.0
-            },
-        }
+            "sharpen": {"saturation_gain": 7.0},
         },
-        "sharpen_5": {
-        "base_config": "svs_cam.yml",
+    },
+    "sharpen_5": {
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 8.0
-            },
-        }
+            "sharpen": {"saturation_gain": 8.0},
         },
-        "sharpen_6": {
-        "base_config": "svs_cam.yml",
+    },
+    "sharpen_6": {
+        "base_config": "SVS_cam.yml",
         "modifications": {
-            "sharpen": {
-                "saturation_gain": 11.0
-            },
-        }
-        }
-    }
+            "sharpen": {"saturation_gain": 11.0},
+        },
+    },
+}
 
 
 def load_and_modify_config(base_config_path, modifications=None):
     """
     Load a base configuration and apply modifications
-    
+
     Args:
         base_config_path (str): Path to base configuration file
         modifications (dict): Dictionary of modifications to apply
-    
+
     Returns:
         dict: Modified configuration
     """
     config_path = os.path.join("./config/", base_config_path)
     config = load_merged_yaml(pipeline_config_paths(config_path))
-    
+
     if modifications:
         for section, changes in modifications.items():
             if section in config:
                 config[section].update(changes)
             else:
                 _log.warning(f"Section '{section}' not found in config")
-    
+
     return config
+
 
 def save_temp_config(config, config_name):
     """
     Save a temporary configuration file
-    
+
     Args:
         config (dict): Configuration dictionary
         config_name (str): Name for the configuration
-    
+
     Returns:
         str: Path to temporary config file
     """
     temp_config_path = f"./config/temp_{config_name}.yml"
-    
+
     with open(temp_config_path, "w", encoding="utf-8") as file:
         yaml.dump(config, file, default_flow_style=False)
-    
+
     return temp_config_path
+
 
 def process_with_config(config_path, output_suffix=""):
     """
     Process the image with a specific configuration
-    
+
     Args:
         config_path (str): Path to configuration file
         output_suffix (str): Suffix to add to output filename
-    
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -140,24 +132,27 @@ def process_with_config(config_path, output_suffix=""):
         _log.info(f"\n{'='*60}")
         _log.info(f"Processing with config: {config_name}")
         _log.info(f"{'='*60}")
-        
+
         # Initialize ISP with the configuration
         brilliant_isp = BrilliantISP(RAW_DATA, config_path, outFileName="", output_path=output_path)
-        
+
         # Execute the pipeline
         start_time = time.time()
-        brilliant_isp.execute(img_path=FILENAME, load_method='3byte', byte_order='big')
+        # Default 'auto' picks layout from file size vs sensor_info W×H
+        # (this RAW is 5,898,240 B = 1920×1536 uint16, matching SVS_cam.yml).
+        brilliant_isp.execute(img_path=FILENAME, load_method="auto", byte_order="big")
         end_time = time.time()
-        
+
         _log.info(f"Successfully processed with {config_name}")
         _log.info(f"  Processing time: {end_time - start_time:.2f} seconds")
         _log.info(f"  Output saved to: {output_path}")
-        
+
         return True
-        
+
     except Exception as e:
         _log.error(f"Error processing with {config_name}: {str(e)}")
         return False
+
 
 def process_multiple_configs():
     """
@@ -166,21 +161,21 @@ def process_multiple_configs():
     _log.info(f"Processing image: {FILENAME}")
     _log.info(f"Available configurations: {len(CONFIG_FILES)}")
     _log.info(f"Custom configurations: {len(CUSTOM_CONFIGS)}")
-    
+
     # Ensure output directory exists
     os.makedirs(OUTPUT_BASE_PATH, exist_ok=True)
-    
+
     successful_configs = []
     failed_configs = []
-    
+
     # Process with standard configurations
     _log.info(f"\n{'='*60}")
     _log.info("PROCESSING WITH STANDARD CONFIGURATIONS")
     _log.info(f"{'='*60}")
-    
+
     for config_file in CONFIG_FILES:
         config_path = os.path.join("./config/", config_file)
-        
+
         if os.path.exists(config_path):
             success = process_with_config(config_path)
             if success:
@@ -190,45 +185,7 @@ def process_multiple_configs():
         else:
             _log.error(f"Configuration file not found: {config_path}")
             failed_configs.append(config_file)
-    
-    # Process with custom configurations
-    _log.info(f"\n{'='*60}")
-    _log.info("PROCESSING WITH CUSTOM CONFIGURATIONS")
-    _log.info(f"{'='*60}")
-    
-    temp_configs = []
-    
-    for config_name, config_spec in CUSTOM_CONFIGS.items():
-        try:
-            # Load and modify base configuration
-            config = load_and_modify_config(
-                config_spec["base_config"], 
-                config_spec["modifications"]
-            )
-            
-            # Save temporary configuration
-            temp_config_path = save_temp_config(config, config_name)
-            temp_configs.append(temp_config_path)
 
-            # Process with modified configuration
-            success = process_with_config(temp_config_path, f"_{config_name}")
-            
-            if success:
-                successful_configs.append(config_name)
-            else:
-                failed_configs.append(config_name)
-                
-        except Exception as e:
-            _log.error(f"Error creating custom config '{config_name}': {str(e)}")
-            failed_configs.append(config_name)
-    
-    # Clean up temporary files
-    for temp_config in temp_configs:
-        try:
-            os.remove(temp_config)
-        except:
-            pass
-    
     # Log summary
     _log.info(f"\n{'='*60}")
     _log.info("PROCESSING SUMMARY")
@@ -246,22 +203,23 @@ def process_multiple_configs():
             _log.info(f"  - {config}")
     _log.info(f"Output directory: {OUTPUT_BASE_PATH}")
 
+
 def process_specific_configs(config_list):
     """
     Process with only specific configurations
-    
+
     Args:
         config_list (list): List of configuration names to process
     """
     _log.info(f"Processing image: {FILENAME}")
     _log.info(f"Selected configurations: {config_list}")
-    
+
     # Ensure output directory exists
     os.makedirs(OUTPUT_BASE_PATH, exist_ok=True)
-    
+
     successful_configs = []
     failed_configs = []
-    
+
     for config_name in config_list:
         # Check if it's a standard config
         if config_name in [Path(f).stem for f in CONFIG_FILES]:
@@ -271,10 +229,7 @@ def process_specific_configs(config_list):
         elif config_name in CUSTOM_CONFIGS:
             try:
                 config_spec = CUSTOM_CONFIGS[config_name]
-                config = load_and_modify_config(
-                    config_spec["base_config"], 
-                    config_spec["modifications"]
-                )
+                config = load_and_modify_config(config_spec["base_config"], config_spec["modifications"])
                 temp_config_path = save_temp_config(config, config_name)
                 success = process_with_config(temp_config_path, f"_{config_name}")
                 os.remove(temp_config_path)
@@ -284,18 +239,19 @@ def process_specific_configs(config_list):
         else:
             _log.error(f"Configuration '{config_name}' not found")
             success = False
-        
+
         if success:
             successful_configs.append(config_name)
         else:
             failed_configs.append(config_name)
-    
+
     _log.info(f"\n{'='*60}")
     _log.info("PROCESSING SUMMARY")
     _log.info(f"{'='*60}")
     _log.info(f"Successful: {len(successful_configs)}")
     _log.info(f"Failed: {len(failed_configs)}")
     _log.info(f"Output directory: {OUTPUT_BASE_PATH}")
+
 
 if __name__ == "__main__":
     import argparse
@@ -305,13 +261,13 @@ if __name__ == "__main__":
     parser.add_argument("--configs", nargs="+", help="Specific configurations to process")
     parser.add_argument("--image", default=FILENAME, help="Image filename to process")
     parser.add_argument("--list", action="store_true", help="List available configurations")
-    
+
     args = parser.parse_args()
-    
+
     # Update filename if provided
     if args.image != FILENAME:
         FILENAME = args.image
-    
+
     if args.list:
         logging.basicConfig(level=logging.INFO)
         _log.info("Available standard configurations:")
@@ -321,11 +277,11 @@ if __name__ == "__main__":
         for config_name in CUSTOM_CONFIGS.keys():
             _log.info(f"  - {config_name}")
         _log.info(f"Current image: {FILENAME}")
-    
+
     elif args.configs:
         # Process specific configurations
         process_specific_configs(args.configs)
-    
+
     else:
         # Process all configurations
-        process_multiple_configs() 
+        process_multiple_configs()

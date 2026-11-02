@@ -4,11 +4,13 @@ Hable (Uncharted 2) integer/LUT tone mapping for production-style ISPs.
 Uses precomputed LUT for the Hable filmic curve.
 No float ops in the hot path - suitable for hardware implementation.
 """
+
 import numpy as np
 from util.debug_utils import get_debug_logger
 from util.isp_types import PlatformConfig, SensorInfo, ToneMappingParams, UInt16Image
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
 
@@ -87,14 +89,14 @@ class HableIntegerToneMapping:
         self.lut_size = 65536
 
         self._build_lut()
-        
+
         # Calculate output normalization factor if enabled
         self.output_scale = 1.0
         if self.normalize_output:
             # Evaluate the LUT at maximum index to find theoretical max
             max_idx = self.lut_size - 1
             theoretical_max = int(self.lut[max_idx])
-            
+
             if theoretical_max > 0:
                 self.output_scale = self.output_max / theoretical_max
                 self.logger.info(f"  Hable normalize output enabled: scaling by {self.output_scale:.3f}x")
@@ -105,9 +107,7 @@ class HableIntegerToneMapping:
     def _build_lut(self) -> None:
         cache_key = (self.lut_size, self.exposure_bias, self.white_point, self.hdr_scale)
         if cache_key not in self._lut_cache:
-            self._lut_cache[cache_key] = _build_hable_lut(
-                self.lut_size, self.exposure_bias, self.white_point, self.hdr_scale
-            )
+            self._lut_cache[cache_key] = _build_hable_lut(self.lut_size, self.exposure_bias, self.white_point, self.hdr_scale)
         self.lut = self._lut_cache[cache_key]
 
     def _apply_curve(self, x: np.ndarray) -> np.ndarray:
@@ -128,23 +128,23 @@ class HableIntegerToneMapping:
 
         idx = np.clip(idx, 0, self.lut_size - 1)
         out = self.lut[idx]
-        
+
         # Apply output normalization scaling if enabled
         if self.normalize_output and self.output_scale != 1.0:
             out = (out.astype(np.float64) * self.output_scale).astype(np.int64)
             out = np.clip(out, 0, self.output_max)
-        
+
         return out.astype(np.uint16)
 
     def plot_tone_curve(self) -> None:
         """Plot and save the Hable integer tone mapping curve."""
         if not self.is_plot_curve:
             return
-        
+
         try:
             # Generate input range
             x = np.linspace(0, self.input_max, 1000, dtype=np.int64)
-            
+
             # Apply the curve
             y = np.zeros_like(x, dtype=np.uint16)
             for i, val in enumerate(x):
@@ -154,46 +154,52 @@ class HableIntegerToneMapping:
                     idx_norm = int((val * (self.lut_size - 1)) // max(1, self.input_max))
                 idx_norm = np.clip(idx_norm, 0, self.lut_size - 1)
                 y[i] = self.lut[idx_norm]
-            
+
             # Create plot with actual values (not normalized)
             plt.figure(figsize=(10, 7))
-            plt.plot(x, y, 'b-', linewidth=2, label='Hable (Uncharted 2) Filmic Curve (LUT)')
+            plt.plot(x, y, "b-", linewidth=2, label="Hable (Uncharted 2) Filmic Curve (LUT)")
             # Linear reference
             x_linear = np.linspace(0, self.input_max, 100)
             y_linear = x_linear * (self.output_max / self.input_max)
-            plt.plot(x_linear, y_linear, 'r--', linewidth=1, alpha=0.5, label='Linear (no tone mapping)')
+            plt.plot(x_linear, y_linear, "r--", linewidth=1, alpha=0.5, label="Linear (no tone mapping)")
             plt.grid(True, alpha=0.3)
-            plt.xlabel(f'Input (0 to {self.input_max})', fontsize=12)
-            plt.ylabel(f'Output (0 to {self.output_max})', fontsize=12)
-            title = f'Hable Integer Tone Mapping Curve (LUT-based)\n'
-            title += f'(exposure_bias={self.exposure_bias}, white_point={self.white_point}, hdr_scale={self.hdr_scale}'
+            plt.xlabel(f"Input (0 to {self.input_max})", fontsize=12)
+            plt.ylabel(f"Output (0 to {self.output_max})", fontsize=12)
+            title = f"Hable Integer Tone Mapping Curve (LUT-based)\n"
+            title += f"(exposure_bias={self.exposure_bias}, white_point={self.white_point}, hdr_scale={self.hdr_scale}"
             if self.normalize_output:
-                title += f', output_norm: {self.output_scale:.3f}x)'
+                title += f", output_norm: {self.output_scale:.3f}x)"
             else:
-                title += ')'
+                title += ")"
             plt.title(title, fontsize=14)
-            
+
             # Add text showing actual max output value
             actual_max = int(y.max())
-            plt.text(0.98, 0.02, f'Max output: {actual_max} ({actual_max/self.output_max*100:.1f}%)',
-                    transform=plt.gca().transAxes, fontsize=10,
-                    verticalalignment='bottom', horizontalalignment='right',
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-            
+            plt.text(
+                0.98,
+                0.02,
+                f"Max output: {actual_max} ({actual_max/self.output_max*100:.1f}%)",
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                verticalalignment="bottom",
+                horizontalalignment="right",
+                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+            )
+
             plt.legend(fontsize=10)
             plt.xlim([0, self.input_max])
             plt.ylim([0, self.output_max])
-            
+
             # Save plot
-            output_dir = self.platform.get('output_dir', 'module_output')
+            output_dir = self.platform.get("output_dir", "module_output")
             os.makedirs(output_dir, exist_ok=True)
-            plot_filename = os.path.join(output_dir, 'tone_curve_hable_integer.png')
-            plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+            plot_filename = os.path.join(output_dir, "tone_curve_hable_integer.png")
+            plt.savefig(plot_filename, dpi=150, bbox_inches="tight")
             plt.close()
-            
+
             self.logger.info(f"  Tone mapping curve saved to: {plot_filename}")
             self.logger.info(f"  Actual max output: {actual_max} ({actual_max/self.output_max*100:.1f}% of range)")
-            
+
         except Exception as e:
             self.logger.warning(f"  Failed to plot tone curve: {e}")
 
@@ -205,5 +211,5 @@ class HableIntegerToneMapping:
 
         # Plot the curve if debug option is enabled
         self.plot_tone_curve()
-        
+
         return self._apply_curve(self.img)

@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: bayer_noise_reduction.py
 Description: Noise reduction in Bayer domain with optional GPU acceleration.
@@ -15,9 +16,11 @@ from util.utils import save_output_array
 # Try to import GPU-accelerated version
 try:
     from modules.bayer_noise_reduction.joint_bf_gpu import JointBFGPU as JBFGPU
+
     GPU_VERSION_AVAILABLE = True
 except ImportError:
     GPU_VERSION_AVAILABLE = False
+
 
 class BayerNoiseReduction:
     """
@@ -39,17 +42,17 @@ class BayerNoiseReduction:
         self.is_leave = platform["leave_pbar_string"]
         self.is_save = parm_bnr["is_save"]
         self.platform = platform
-        
+
         # Initialize debug logger
         self.logger = get_debug_logger("BayerNoiseReduction", config=self.platform)
-        
+
         # Check if GPU acceleration should be used
         self.use_gpu = False
         if GPU_VERSION_AVAILABLE:
             try:
                 from util.gpu_utils import is_gpu_available, should_use_gpu
-                self.use_gpu = (is_gpu_available() and 
-                               should_use_gpu((sensor_info["height"], sensor_info["width"]), 'filter2d'))
+
+                self.use_gpu = is_gpu_available() and should_use_gpu((sensor_info["height"], sensor_info["width"]), "filter2d")
             except ImportError:
                 self.use_gpu = False
 
@@ -67,7 +70,7 @@ class BayerNoiseReduction:
             self.logger.info("  Using original CPU Bayer Noise Reduction")
             jbf = JBF(self.img, self.sensor_info, self.parm_bnr, self.platform)
             bnr_out_img = jbf.apply_jbf()
-        
+
         return bnr_out_img
 
     def save(self) -> None:

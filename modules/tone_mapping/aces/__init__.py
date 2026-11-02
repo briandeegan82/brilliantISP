@@ -6,4 +6,4 @@ Academy Color Encoding System tone mapping implementation
 
 from .aces_tone_mapping import ACESToneMapping
 
-__all__ = ['ACESToneMapping']
+__all__ = ["ACESToneMapping"]

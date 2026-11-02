@@ -63,9 +63,7 @@ class DynamicDPC:
         # Condition 1: center_pixel needs to be corrected if it lies outside the
         # interval(min_value,max) of the 3x3 neighbourhood.
         # min_value < center_pixel < max_value--> no correction needed
-        mask_cond1 = (
-            np.where((min_value > self.img) | (self.img > max_value), True, False)
-        ).astype("int32")
+        mask_cond1 = (np.where((min_value > self.img) | (self.img > max_value), True, False)).astype("int32")
 
         # Condition 2:
         # center_pixel is corrected only if the difference of center_pixel and every
@@ -293,12 +291,8 @@ class DynamicDPC:
         # compile all pixels that can be corrected using the neighbors in the same direction
         corrected_v = np.where(min_grad == vertical_grad, mean_v, 0) * detection_mask
         corrected_h = np.where(min_grad == horizontal_grad, mean_h, 0) * detection_mask
-        corrected_ldia = (
-            np.where(min_grad == left_diagonal_grad, mean_ldia, 0) * detection_mask
-        )
-        corrected_rdia = (
-            np.where(min_grad == right_diagonal_grad, mean_rdia, 0) * detection_mask
-        )
+        corrected_ldia = np.where(min_grad == left_diagonal_grad, mean_ldia, 0) * detection_mask
+        corrected_rdia = np.where(min_grad == right_diagonal_grad, mean_rdia, 0) * detection_mask
 
         # In most cases, the corrected masks created above will not overlap, as each pixel will
         # have a unique gradient direction. However, in rare cases where two or more directions

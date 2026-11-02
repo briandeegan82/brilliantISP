@@ -6,9 +6,11 @@ https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pd
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import numpy as np
 import cv2
 from util.utils import stride_convolve2d
+
 
 ################################################################################
 class NearestNeighbor:
@@ -44,9 +46,8 @@ class NearestNeighbor:
         """
         # OpenCV expects (width, height) format, so we reverse the size tuple
         new_size_cv2 = (self.new_size[1], self.new_size[0])
-        
+
         # Use OpenCV's INTER_NEAREST for nearest neighbor interpolation
-        scaled_img = cv2.resize(self.single_channel, new_size_cv2, 
-                               interpolation=cv2.INTER_NEAREST)
-        
+        scaled_img = cv2.resize(self.single_channel, new_size_cv2, interpolation=cv2.INTER_NEAREST)
+
         return scaled_img.astype("float32")

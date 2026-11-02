@@ -6,6 +6,7 @@ Code / Paper  Reference: https://www.atlantis-press.com/article/25875811.pdf
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import time
 import numpy as np
 from util.debug_utils import get_debug_logger
@@ -17,9 +18,7 @@ class AutoExposure:
     Auto Exposure Module
     """
 
-    def __init__(
-        self, img: np.ndarray, sensor_info: SensorInfo, parm_ae: AutoExposureConfig
-    ) -> None:
+    def __init__(self, img: np.ndarray, sensor_info: SensorInfo, parm_ae: AutoExposureConfig) -> None:
         self.img = img
         self.enable = parm_ae["is_enable"]
         self.is_debug = parm_ae["is_debug"]
@@ -122,9 +121,7 @@ class AutoExposure:
         grey_img = np.clip(grey, 0.0, max_ch)
         return grey_img, np.average(grey_img, axis=(0, 1))
 
-    def get_luminance_histogram_skewness(
-        self, img: np.ndarray, center: float
-    ) -> np.floating:
+    def get_luminance_histogram_skewness(self, img: np.ndarray, center: float) -> np.floating:
         """
         Skewness Calculation in reference to:
         Zwillinger, D. and Kokoska, S. (2000). CRC Standard Probability and Statistics
@@ -161,9 +158,7 @@ class AutoExposure:
             return c * max_ch
         return c
 
-    def suggest_direct_gain_index(
-        self, current_gain_index: int, gain_array: list[float]
-    ) -> int:
+    def suggest_direct_gain_index(self, current_gain_index: int, gain_array: list[float]) -> int:
         """
         Pick gain_array index closest to the multiplier that would move
         last_meter_average toward target_luminance in one shot (first-order).

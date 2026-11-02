@@ -29,11 +29,8 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 from brilliant_isp import BrilliantISP  # noqa: E402
 from util.config_merge import load_merged_yaml, pipeline_config_paths  # noqa: E402
 
-
 DEFAULT_CONFIG = REPO_ROOT / "config" / "svs_cam.yml"
-DEFAULT_RAW = (
-    REPO_ROOT / "in_frames" / "hdr_mode" / "frame_0460_fsin_38361194647660880.raw"
-)
+DEFAULT_RAW = REPO_ROOT / "in_frames" / "hdr_mode" / "frame_0460_fsin_38361194647660880.raw"
 DEFAULT_REPORT = REPO_ROOT / "reports" / "isp_block_profile_report.md"
 DEFAULT_DATA = REPO_ROOT / "reports" / "isp_block_profile_data.json"
 
@@ -247,15 +244,10 @@ def run_pipeline_once(config_path: Path, raw_path: Path, variant_name: str) -> d
         capture_output=True,
         check=True,
     )
-    combined_output = "\n".join(
-        part for part in [completed.stdout, completed.stderr] if part
-    )
+    combined_output = "\n".join(part for part in [completed.stdout, completed.stderr] if part)
     marker_match = re.search(r"__PROFILE_RESULT__(\{.*\})", combined_output)
     if marker_match is None:
-        raise RuntimeError(
-            "Single-run profiler did not emit a result marker.\n"
-            f"Captured output:\n{combined_output}"
-        )
+        raise RuntimeError("Single-run profiler did not emit a result marker.\n" f"Captured output:\n{combined_output}")
 
     result = json.loads(marker_match.group(1))
     result["block_timings_seconds"] = parse_timings(combined_output)
@@ -342,11 +334,7 @@ def build_report(
         key = block["key"]
         stats = base_summary["blocks"].get(key)
         share_text = "n/a"
-        if (
-            stats
-            and base_summary["wall_time_seconds"]["mean"]
-            and stats["mean"] is not None
-        ):
+        if stats and base_summary["wall_time_seconds"]["mean"] and stats["mean"] is not None:
             share = 100.0 * stats["mean"] / base_summary["wall_time_seconds"]["mean"]
             share_text = f"{share:.1f}%"
 
@@ -383,10 +371,7 @@ def build_report(
         stats = result["summary"]["blocks"].get(key, {})
         wall_stats = result["summary"]["wall_time_seconds"]
         delta = None
-        if (
-            wall_stats["mean"] is not None
-            and base_summary["wall_time_seconds"]["mean"] is not None
-        ):
+        if wall_stats["mean"] is not None and base_summary["wall_time_seconds"]["mean"] is not None:
             delta = wall_stats["mean"] - base_summary["wall_time_seconds"]["mean"]
 
         isolated_rows.append(
@@ -409,27 +394,27 @@ def build_report(
         "- The inline 16-bit to 8-bit conversion step is included in coverage but left unmeasured because the current code does not emit a dedicated high-resolution timing event for it",
     ]
 
-    observed_blocks = [
-        (key, stats)
-        for key, stats in base_summary["blocks"].items()
-        if stats["mean"] is not None
-    ]
-    slowest_block_summary = (
-        max(observed_blocks, key=lambda item: item[1]["mean"]) if observed_blocks else None
-    )
+    observed_blocks = [(key, stats) for key, stats in base_summary["blocks"].items() if stats["mean"] is not None]
+    slowest_block_summary = max(observed_blocks, key=lambda item: item[1]["mean"]) if observed_blocks else None
 
     summary_lines = [
         f"- Mean end-to-end wall time: `{format_seconds(base_summary['wall_time_seconds']['mean'])}`",
         f"- Run-to-run stdev: `{format_seconds(base_summary['wall_time_seconds']['stdev'])}`",
         (
-            f"- Slowest measured block in base config: "
-            f"`{KEY_TO_NAME[slowest_block_summary[0]]}` at "
-            f"`{format_seconds(slowest_block_summary[1]['mean'])}`"
-        )
-        if slowest_block_summary
-        else "- No block timings captured",
+            (
+                f"- Slowest measured block in base config: "
+                f"`{KEY_TO_NAME[slowest_block_summary[0]]}` at "
+                f"`{format_seconds(slowest_block_summary[1]['mean'])}`"
+            )
+            if slowest_block_summary
+            else "- No block timings captured"
+        ),
         f"- Enabled in base config: `{', '.join(base_enabled)}`",
-        f"- Disabled in base config but profiled separately: `{', '.join(base_disabled)}`" if base_disabled else "- No disabled blocks required separate profiling",
+        (
+            f"- Disabled in base config but profiled separately: `{', '.join(base_disabled)}`"
+            if base_disabled
+            else "- No disabled blocks required separate profiling"
+        ),
     ]
 
     return "\n".join(
@@ -502,9 +487,7 @@ def main() -> int:
         and not base_config[block["key"]]["is_enable"]
     ]
 
-    variants = [("base", set())] + [
-        (f"{key}_enabled", {key}) for key in disabled_profile_keys
-    ]
+    variants = [("base", set())] + [(f"{key}_enabled", {key}) for key in disabled_profile_keys]
 
     all_results: dict[str, dict[str, Any]] = {}
     with tempfile.TemporaryDirectory(prefix="isp_profile_") as temp_dir_name:
@@ -521,10 +504,7 @@ def main() -> int:
             for _ in range(args.warmup_runs):
                 run_pipeline_once(config_path, args.raw, variant_name)
 
-            measured_runs = [
-                run_pipeline_once(config_path, args.raw, variant_name)
-                for _ in range(args.runs)
-            ]
+            measured_runs = [run_pipeline_once(config_path, args.raw, variant_name) for _ in range(args.runs)]
             result = {
                 "focus_block": next(iter(overrides), None),
                 "runs": measured_runs,

@@ -6,10 +6,12 @@ https://patentimages.storage.googleapis.com/f9/11/65/a2b66f52c6dbd4/US8538199.pd
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import numpy as np
 import cv2
 from util.utils import stride_convolve2d
+
 
 ################################################################################
 class BilinearInterpolation:
@@ -28,28 +30,26 @@ class BilinearInterpolation:
         """
         # OpenCV expects (width, height) format, so we reverse the size tuple
         new_size_cv2 = (self.new_size[1], self.new_size[0])
-        
+
         if self.use_gpu:
             # GPU-accelerated version using UMat
             try:
                 # Convert to UMat for GPU processing
                 gpu_img = cv2.UMat(self.single_channel)
-                
+
                 # Use OpenCV's INTER_LINEAR for bilinear interpolation on GPU
-                gpu_scaled = cv2.resize(gpu_img, new_size_cv2, 
-                                      interpolation=cv2.INTER_LINEAR)
-                
+                gpu_scaled = cv2.resize(gpu_img, new_size_cv2, interpolation=cv2.INTER_LINEAR)
+
                 # Get result back to CPU
                 scaled_img = gpu_scaled.get()
                 return scaled_img.astype("float32")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"GPU acceleration failed, falling back to CPU: {e}")
                 self.use_gpu = False
-        
+
         # CPU version (fallback or when GPU not available)
-        scaled_img = cv2.resize(self.single_channel, new_size_cv2, 
-                               interpolation=cv2.INTER_LINEAR)
-        
+        scaled_img = cv2.resize(self.single_channel, new_size_cv2, interpolation=cv2.INTER_LINEAR)
+
         return scaled_img.astype("float32")
 
     def downscale_by_int_factor(self, new_size=None):

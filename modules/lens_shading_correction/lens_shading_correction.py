@@ -6,6 +6,7 @@ Corrects radial falloff (darker corners) using a per-channel polynomial gain mod
 where r is normalized distance from center (0 at center, 1 at corners).
 Operates on raw Bayer before demosaic; preserves linearity.
 """
+
 import time
 from typing import cast
 import numpy as np
@@ -14,9 +15,7 @@ from util.isp_types import LensShadingCorrectionConfig, PlatformConfig, RawBayer
 from util.utils import save_output_array
 
 
-def _build_radial_gain_map(
-    height: int, width: int, k1: float, k2: float
-) -> np.ndarray:
+def _build_radial_gain_map(height: int, width: int, k1: float, k2: float) -> np.ndarray:
     """
     Build 2D gain map from radial polynomial: gain(r) = 1 + k1*r² + k2*r⁴.
     r = distance from center / max_distance, so r in [0, 1] at corners.
@@ -28,8 +27,8 @@ def _build_radial_gain_map(
 
     y = np.arange(height, dtype=np.float32)[:, np.newaxis]
     x = np.arange(width, dtype=np.float32)[np.newaxis, :]
-    r_sq = ((y - cy) ** 2 + (x - cx) ** 2) / (max_dist ** 2)
-    gain = 1.0 + k1 * r_sq + k2 * (r_sq ** 2)
+    r_sq = ((y - cy) ** 2 + (x - cx) ** 2) / (max_dist**2)
+    gain = 1.0 + k1 * r_sq + k2 * (r_sq**2)
     return np.maximum(gain, 0.1).astype(np.float32)
 
 

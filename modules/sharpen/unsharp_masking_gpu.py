@@ -4,6 +4,7 @@ Description: GPU-accelerated unsharp masking with frequency and strength control
 Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 """
+
 import logging
 import numpy as np
 from scipy import ndimage
@@ -13,20 +14,19 @@ from util.isp_types import RGBImage
 
 # Import GPU utilities with fallback
 try:
-    from util.gpu_utils import (
-        is_gpu_available, should_use_gpu, gpu_gaussian_blur, 
-        to_umat, from_umat
-    )
+    from util.gpu_utils import is_gpu_available, should_use_gpu, gpu_gaussian_blur, to_umat, from_umat
+
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
+
     # Fallback functions for CPU-only systems
     def is_gpu_available() -> bool:
         return False
-    
+
     def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
         return False
-    
+
     def gpu_gaussian_blur(
         img: np.ndarray,
         ksize: tuple[int, int],
@@ -35,10 +35,10 @@ except ImportError:
         use_gpu: bool = True,
     ) -> np.ndarray:
         return cv2.GaussianBlur(img, ksize, sigma_x, sigmaY=sigma_y)
-    
+
     def to_umat(img: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return img
-    
+
     def from_umat(umat_or_array: np.ndarray) -> np.ndarray:
         return umat_or_array
 
@@ -48,17 +48,14 @@ class UnsharpMaskingGPU:
     GPU-accelerated Unsharp Masking Algorithm with automatic CPU fallback
     """
 
-    def __init__(
-        self, img: RGBImage, sharpen_sigma: float, sharpen_strength: float
-    ) -> None:
+    def __init__(self, img: RGBImage, sharpen_sigma: float, sharpen_strength: float) -> None:
         self.img = img
         self.sharpen_sigma = sharpen_sigma
         self.sharpen_strength = sharpen_strength
-        
+
         # Check if GPU acceleration should be used
-        self.use_gpu = (is_gpu_available() and 
-                       should_use_gpu((img.shape[0], img.shape[1]), 'gaussian_blur'))
-        
+        self.use_gpu = is_gpu_available() and should_use_gpu((img.shape[0], img.shape[1]), "gaussian_blur")
+
         self._log = logging.getLogger(__name__)
         if self.use_gpu:
             self._log.info("    Using GPU acceleration for Unsharp Masking")
@@ -76,7 +73,7 @@ class UnsharpMaskingGPU:
             smoothened = self.apply_gaussian_blur_gpu(luma)
         else:
             smoothened = self.apply_gaussian_blur_cpu(luma)
-        
+
         # Sharpen the image with unsharp mask
         # Strength is tuneable with the sharpen_strength parameter
         sharpened = luma + ((luma - smoothened) * self.sharpen_strength)
@@ -85,7 +82,7 @@ class UnsharpMaskingGPU:
             self.img[:, :, 0] = np.clip(sharpened, 0, 1)
         else:
             self.img[:, :, 0] = np.uint8(np.clip(sharpened, 0, 255))
-        
+
         return self.img
 
     def apply_gaussian_blur_gpu(self, luma: np.ndarray) -> np.ndarray:
@@ -95,18 +92,17 @@ class UnsharpMaskingGPU:
         try:
             # Convert to GPU
             gpu_luma = to_umat(luma, use_gpu=True)
-            
+
             # Calculate kernel size based on sigma
             kernel_size = int(self.sharpen_sigma * 6 + 1)
             if kernel_size % 2 == 0:
                 kernel_size += 1
-            
+
             # Apply GPU Gaussian blur
-            gpu_smoothened = gpu_gaussian_blur(gpu_luma, (kernel_size, kernel_size), 
-                                             self.sharpen_sigma, use_gpu=True)
-            
+            gpu_smoothened = gpu_gaussian_blur(gpu_luma, (kernel_size, kernel_size), self.sharpen_sigma, use_gpu=True)
+
             return from_umat(gpu_smoothened)
-            
+
         except Exception as e:
             self._log.warning(f"    GPU Gaussian blur failed, falling back to CPU: {e}")
             return self.apply_gaussian_blur_cpu(luma)

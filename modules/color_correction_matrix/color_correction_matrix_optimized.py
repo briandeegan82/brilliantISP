@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: color_correction_matrix_optimized.py
 Description: CCM on linear RGB; expects linear demosaic output.

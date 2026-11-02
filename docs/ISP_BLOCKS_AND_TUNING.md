@@ -66,7 +66,8 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 - **`hdr_bit_depth`**: Logical HDR range after decompanding (used for DPC, DG, AWB limits, tone-map normalization before demosaic).
 - **`pipeline_rgb_bit_depth`**: Demosaic/CCM/AE linear RGB precision (typically 16).
 - **`output_bit_depth`**: Final display bit depth (often 8).
-- **`data_format`**, **`endian_type`**: Raw loading (e.g. `uint16`, `ieee-be`).
+- **`data_format`**, **`endian_type`**, **`data_alignment`**: Raw loading (e.g. `uint16`, `ieee-le`, `MSB`/`LSB`). `MSB` right-shifts left-justified samples into the low `bit_depth` bits.
+- **`horizontal_flip`**, **`vertical_flip`**: Mirror the loaded RAW/PGM Bayer plane before the rest of the pipeline. `bayer_pattern` is the CFA after these flips.
 
 **Tuning:** Wrong `width`/`height` or `bayer_pattern` causes color fringing, wrong WB, or load failures. Align `hdr_bit_depth` with your PWC/tone-map pipeline.
 
@@ -108,7 +109,9 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 
 **Role:** Reverses sensor **companding** with a piecewise linear LUT (`companded_pin` → `companded_pout`) to produce linear scene-referred values (`modules/pwc_generation/pwc_generation.py`).
 
-**Keys:** `is_enable`, `companded_pin`, `companded_pout`, `pedestal`, `companded`.
+**Keys:** `is_enable`, `companded_pin`, `companded_pout`, `pre_linearization_black_level`, `post_linearization_black_level`, `companded`. Legacy: `pedestal` aliases `pre_linearization_black_level` when the new key is absent.
+
+**Order:** subtract `pre_linearization_black_level` → PWC LUT → subtract `post_linearization_black_level`. Use post when the sensor black (e.g. IMX728 240 LSB) lives in the linearized domain.
 
 **Tuning:** Must match the sensor’s compression curve. Mismatched knees cause incorrect HDR scaling and bad tone mapping. If data are already linear, disable or replace with identity-like knees.
 

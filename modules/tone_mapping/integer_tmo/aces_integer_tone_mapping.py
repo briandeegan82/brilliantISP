@@ -5,11 +5,13 @@ Uses precomputed LUTs for the ACES filmic curve and sRGB gamma.
 No float ops in the hot path - suitable for hardware implementation.
 Based on ACES 1.0 RRT (Knarkowicz 2016 fitted) + sRGB ODT.
 """
+
 import numpy as np
 from util.debug_utils import get_debug_logger
 from util.isp_types import PlatformConfig, SensorInfo, ToneMappingParams, UInt16Image
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
 
@@ -83,7 +85,7 @@ class ACESIntegerToneMapping:
         self.lut_size = 65536
 
         self._build_luts()
-        
+
         # Calculate output normalization factor if enabled
         self.output_scale = 1.0
         if self.normalize_output:
@@ -94,7 +96,7 @@ class ACESIntegerToneMapping:
                 theoretical_max = int(self.srgb_lut[theoretical_max_rrt])
             else:
                 theoretical_max = theoretical_max_rrt
-            
+
             if theoretical_max > 0:
                 self.output_scale = self.output_max / theoretical_max
                 self.logger.info(f"  ACES normalize output enabled: scaling by {self.output_scale:.3f}x")
@@ -106,14 +108,10 @@ class ACESIntegerToneMapping:
         """Build or retrieve cached LUTs."""
         gamma_key = (self.lut_size, self.gamma)
         if gamma_key not in self._srgb_lut_cache:
-            self._srgb_lut_cache[gamma_key] = _build_srgb_gamma_lut(
-                self.lut_size, self.gamma
-            )
+            self._srgb_lut_cache[gamma_key] = _build_srgb_gamma_lut(self.lut_size, self.gamma)
         rrt_key = (self.lut_size, self.hdr_scale)
         if rrt_key not in self._rrt_lut_cache:
-            self._rrt_lut_cache[rrt_key] = _build_aces_rrt_lut(
-                self.lut_size, self.hdr_scale
-            )
+            self._rrt_lut_cache[rrt_key] = _build_aces_rrt_lut(self.lut_size, self.hdr_scale)
 
         self.rrt_lut = self._rrt_lut_cache[(self.lut_size, self.hdr_scale)]
         self.srgb_lut = self._srgb_lut_cache[gamma_key]
@@ -128,7 +126,7 @@ class ACESIntegerToneMapping:
 
         # Exposure: scale by 2^exp (integer)
         if abs(self.exposure) > 1e-6:
-            exp_scale = int(round((2.0 ** self.exposure) * 65536))
+            exp_scale = int(round((2.0**self.exposure) * 65536))
             x = (x * exp_scale) >> 16
             x = np.clip(x, 0, self.input_max)
 
@@ -137,7 +135,7 @@ class ACESIntegerToneMapping:
             img_min = int(np.min(x))
             img_max = int(np.max(x))
             range_val = max(1, img_max - img_min)
-            
+
             # Estimate actual dynamic range in stops
             if img_min > 0:
                 ratio = img_max / img_min
@@ -145,7 +143,7 @@ class ACESIntegerToneMapping:
                 self.logger.info(f"  Image dynamic range: {img_min} to {img_max} (ratio: {ratio:.1f}:1)")
                 self.logger.info(f"  Estimated DR: {actual_dr_stops:.2f} stops")
                 self.logger.info(f"  Recommended hdr_scale: {actual_dr_stops:.1f} (current: {self.hdr_scale})")
-            
+
             # Normalized [0,1]: (x - min) / range
             idx = ((x - img_min) * (self.lut_size - 1)) // range_val
         else:
@@ -159,7 +157,7 @@ class ACESIntegerToneMapping:
 
         if self.apply_gamma:
             out = self.srgb_lut[out]
-        
+
         # Apply output normalization scaling if enabled
         if self.normalize_output and self.output_scale != 1.0:
             out = (out.astype(np.float64) * self.output_scale).astype(np.int64)
@@ -171,73 +169,79 @@ class ACESIntegerToneMapping:
         """Plot and save the ACES integer tone mapping curve."""
         if not self.is_plot_curve:
             return
-        
+
         try:
             # Generate input range - show actual curve without per-image normalization
             x = np.linspace(0, self.input_max, 1000, dtype=np.int64)
-            
+
             # Apply the curve WITHOUT per-image normalization for plotting
             # This shows the true curve behavior in the absolute input space
             y_rrt = np.zeros_like(x, dtype=np.uint16)
             y_full = np.zeros_like(x, dtype=np.uint16)
-            
+
             for i, val in enumerate(x):
                 # Map to LUT index using absolute values (no per-image normalization)
                 idx = int((val * (self.lut_size - 1)) // max(1, self.input_max))
                 idx = np.clip(idx, 0, self.lut_size - 1)
                 y_rrt[i] = self.rrt_lut[idx]
-                
+
                 # RRT + gamma
                 y_full[i] = self.srgb_lut[y_rrt[i]] if self.apply_gamma else y_rrt[i]
-            
+
             # Apply output normalization if enabled (matches actual processing)
             if self.normalize_output and self.output_scale != 1.0:
                 y_rrt = np.clip((y_rrt.astype(np.float64) * self.output_scale), 0, self.output_max).astype(np.uint16)
                 y_full = np.clip((y_full.astype(np.float64) * self.output_scale), 0, self.output_max).astype(np.uint16)
-            
+
             # Create plot with actual values
             plt.figure(figsize=(10, 7))
-            plt.plot(x, y_rrt, 'b-', linewidth=2, label='ACES RRT (LUT, filmic)')
+            plt.plot(x, y_rrt, "b-", linewidth=2, label="ACES RRT (LUT, filmic)")
             if self.apply_gamma:
-                plt.plot(x, y_full, 'g-', linewidth=2, label='ACES RRT + sRGB gamma (LUT)')
+                plt.plot(x, y_full, "g-", linewidth=2, label="ACES RRT + sRGB gamma (LUT)")
             # Linear reference
             x_linear = np.linspace(0, self.input_max, 100)
             y_linear = x_linear * (self.output_max / self.input_max)
-            plt.plot(x_linear, y_linear, 'r--', linewidth=1, alpha=0.5, label='Linear (no tone mapping)')
+            plt.plot(x_linear, y_linear, "r--", linewidth=1, alpha=0.5, label="Linear (no tone mapping)")
             plt.grid(True, alpha=0.3)
-            plt.xlabel(f'Input (0 to {self.input_max})', fontsize=12)
-            plt.ylabel(f'Output (0 to {self.output_max})', fontsize=12)
-            title = f'ACES Integer Tone Mapping Curve (LUT-based)\n'
-            title += f'(hdr_scale={self.hdr_scale}, exposure={self.exposure:.1f} EV, gamma={self.gamma}'
+            plt.xlabel(f"Input (0 to {self.input_max})", fontsize=12)
+            plt.ylabel(f"Output (0 to {self.output_max})", fontsize=12)
+            title = f"ACES Integer Tone Mapping Curve (LUT-based)\n"
+            title += f"(hdr_scale={self.hdr_scale}, exposure={self.exposure:.1f} EV, gamma={self.gamma}"
             if self.use_normalization:
-                title += ', per-image norm'
+                title += ", per-image norm"
             if self.normalize_output:
-                title += f', output_norm: {self.output_scale:.3f}x)'
+                title += f", output_norm: {self.output_scale:.3f}x)"
             else:
-                title += ')'
+                title += ")"
             plt.title(title, fontsize=14)
-            
+
             # Add text showing actual max output value
             actual_max = int(y_full.max() if self.apply_gamma else y_rrt.max())
-            plt.text(0.98, 0.02, f'Max output: {actual_max} ({actual_max/self.output_max*100:.1f}%)',
-                    transform=plt.gca().transAxes, fontsize=10,
-                    verticalalignment='bottom', horizontalalignment='right',
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-            
+            plt.text(
+                0.98,
+                0.02,
+                f"Max output: {actual_max} ({actual_max/self.output_max*100:.1f}%)",
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                verticalalignment="bottom",
+                horizontalalignment="right",
+                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+            )
+
             plt.legend(fontsize=10)
             plt.xlim([0, self.input_max])
             plt.ylim([0, self.output_max])
-            
+
             # Save plot
-            output_dir = self.platform.get('output_dir', 'module_output')
+            output_dir = self.platform.get("output_dir", "module_output")
             os.makedirs(output_dir, exist_ok=True)
-            plot_filename = os.path.join(output_dir, 'tone_curve_aces_integer.png')
-            plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+            plot_filename = os.path.join(output_dir, "tone_curve_aces_integer.png")
+            plt.savefig(plot_filename, dpi=150, bbox_inches="tight")
             plt.close()
-            
+
             self.logger.info(f"  Tone mapping curve saved to: {plot_filename}")
             self.logger.info(f"  Actual max output: {actual_max} ({actual_max/self.output_max*100:.1f}% of range)")
-            
+
         except Exception as e:
             self.logger.warning(f"  Failed to plot tone curve: {e}")
 
@@ -249,5 +253,5 @@ class ACESIntegerToneMapping:
 
         # Plot the curve if debug option is enabled
         self.plot_tone_curve()
-        
+
         return self._apply_curve(self.img)

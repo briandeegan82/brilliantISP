@@ -5,6 +5,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import logging
 import math
 from typing import Any, cast
@@ -15,25 +16,22 @@ from util.isp_types import LDCIConfig, PlatformConfig, SensorInfo
 
 # Import GPU utilities with fallback
 try:
-    from util.gpu_utils import (
-        is_gpu_available, should_use_gpu, gpu_filter2d, 
-        gpu_gaussian_blur, to_umat, from_umat
-    )
+    from util.gpu_utils import is_gpu_available, should_use_gpu, gpu_filter2d, gpu_gaussian_blur, to_umat, from_umat
+
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
+
     # Fallback functions for CPU-only systems
     def is_gpu_available() -> bool:
         return False
-    
+
     def should_use_gpu(img_size: tuple[int, int], operation: str) -> bool:
         return False
-    
-    def gpu_filter2d(
-        img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True
-    ) -> np.ndarray:
+
+    def gpu_filter2d(img: np.ndarray, kernel: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return cv2.filter2D(img, -1, kernel)
-    
+
     def gpu_gaussian_blur(
         img: np.ndarray,
         ksize: tuple[int, int],
@@ -42,10 +40,10 @@ except ImportError:
         use_gpu: bool = True,
     ) -> np.ndarray:
         return cv2.GaussianBlur(img, ksize, sigma_x, sigmaY=sigma_y)
-    
+
     def to_umat(img: np.ndarray, use_gpu: bool = True) -> np.ndarray:
         return img
-    
+
     def from_umat(umat_or_array: np.ndarray) -> np.ndarray:
         return umat_or_array
 
@@ -70,10 +68,9 @@ class CLAHEOptimized:
         self.clip_limit = parm_ldci["clip_limit"]
         self.is_save = parm_ldci["is_save"]
         self.platform = platform
-        
+
         # Check if GPU acceleration should be used
-        self.use_gpu = (is_gpu_available() and 
-                       should_use_gpu((yuv.shape[0], yuv.shape[1]), 'filter2d'))
+        self.use_gpu = is_gpu_available() and should_use_gpu((yuv.shape[0], yuv.shape[1]), "filter2d")
         self._log = logging.getLogger(__name__)
         if self.use_gpu:
             self._log.info("  Using GPU acceleration for CLAHE")
@@ -91,21 +88,15 @@ class CLAHEOptimized:
         """
         if isinstance(pads, (list, tuple, np.ndarray)):
             if len(pads) == 2:
-                pads = ((pads[0], pads[0]), (pads[1], pads[1])) + ((0, 0),) * (
-                    array.ndim - 2
-                )
+                pads = ((pads[0], pads[0]), (pads[1], pads[1])) + ((0, 0),) * (array.ndim - 2)
             elif len(pads) == 4:
-                pads = ((pads[0], pads[1]), (pads[2], pads[3])) + ((0, 0),) * (
-                    array.ndim - 2
-                )
+                pads = ((pads[0], pads[1]), (pads[2], pads[3])) + ((0, 0),) * (array.ndim - 2)
             else:
                 raise NotImplementedError
 
         return np.pad(array, cast(Any, pads), mode=cast(Any, mode))
 
-    def crop(
-        self, array: np.ndarray, crops: int | tuple[int, ...] | list[int] | np.ndarray
-    ) -> np.ndarray:
+    def crop(self, array: np.ndarray, crops: int | tuple[int, ...] | list[int] | np.ndarray) -> np.ndarray:
         """
         Optimized array cropping using NumPy
         """
@@ -121,9 +112,7 @@ class CLAHEOptimized:
             top_crop = bottom_crop = left_crop = right_crop = crops
 
         height, width = array.shape[:2]
-        return array[
-            top_crop : height - bottom_crop, left_crop : width - right_crop, ...
-        ]
+        return array[top_crop : height - bottom_crop, left_crop : width - right_crop, ...]
 
     def get_tile_lut_optimized(self, tiled_array: np.ndarray) -> np.ndarray:
         """
@@ -210,39 +199,30 @@ class CLAHEOptimized:
         interp_current_blocks = self.interp_blocks_optimized(left_lut_weights, block, left_lut, current_lut)
 
         interp_final = np.right_shift(
-            top_lut_weights * interp_top_blocks
-            + (1024 - top_lut_weights) * interp_current_blocks,
+            top_lut_weights * interp_top_blocks + (1024 - top_lut_weights) * interp_current_blocks,
             10,
         ).astype(np.uint8)
         return interp_final
 
-    def is_corner_block(
-        self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_corner_block(self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Check if block is at corner
         """
         return (i_col == 0 or i_col == horiz_tiles) and (i_row == 0 or i_row == vert_tiles)
 
-    def is_top_or_bottom_block(
-        self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_top_or_bottom_block(self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Check if block is at top or bottom
         """
         return (i_row == 0 or i_row == vert_tiles) and (i_col > 0 and i_col < horiz_tiles)
 
-    def is_left_or_right_block(
-        self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_left_or_right_block(self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Check if block is at left or right
         """
         return (i_col == 0 or i_col == horiz_tiles) and (i_row > 0 and i_row < vert_tiles)
 
-    def is_neighbor_block(
-        self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int
-    ) -> bool:
+    def is_neighbor_block(self, horiz_tiles: int, vert_tiles: int, i_col: int, i_row: int) -> bool:
         """
         Check if block is a neighbor block
         """
@@ -276,12 +256,8 @@ class CLAHEOptimized:
 
         # OPTIMIZATION: Use vectorized weight generation
         # Assigning linearized LUT weights to top and left blocks
-        left_lut_weights = np.linspace(1024, 0, tile_width, dtype=np.int32).reshape(
-            (1, -1)
-        )
-        top_lut_weights = np.linspace(1024, 0, tile_height, dtype=np.int32).reshape(
-            (-1, 1)
-        )
+        left_lut_weights = np.linspace(1024, 0, tile_width, dtype=np.int32).reshape((1, -1))
+        top_lut_weights = np.linspace(1024, 0, tile_height, dtype=np.int32).reshape((-1, 1))
 
         # Declaring an empty 3D array of LUTs for each tile
         luts = np.empty(shape=(vert_tiles, horiz_tiles, 256), dtype=np.uint8)
@@ -322,11 +298,7 @@ class CLAHEOptimized:
                 start_col_index = max(start_col_index, 0)
 
                 # Extracting the tile for processing
-                y_block = (
-                    y_padded[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ]
-                ).astype(np.uint8)
+                y_block = (y_padded[start_row_index:end_row_index, start_col_index:end_col_index]).astype(np.uint8)
 
                 # OPTIMIZATION: Use optimized interpolation methods
                 # Checking the position of the block and applying interpolation accordingly
@@ -335,23 +307,15 @@ class CLAHEOptimized:
                     lut_y_idx = 0 if i_row == 0 else vert_tiles - 1
                     lut_x_idx = 0 if i_col == 0 else horiz_tiles - 1
                     lut = luts[lut_y_idx, lut_x_idx]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (lut[y_block]).astype(np.float32)
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (lut[y_block]).astype(np.float32)
 
                 elif self.is_top_or_bottom_block(horiz_tiles, vert_tiles, i_col, i_row):
                     # Top or bottom block - interpolate with left block
                     lut_y_idx = 0 if i_row == 0 else vert_tiles - 1
                     left_lut = luts[lut_y_idx, i_col - 1]
                     current_lut = luts[lut_y_idx, i_col]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
-                        (
-                            self.interp_top_bottom_block_optimized(
-                                left_lut_weights, y_block, left_lut, current_lut
-                            )
-                        )
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
+                        (self.interp_top_bottom_block_optimized(left_lut_weights, y_block, left_lut, current_lut))
                     ).astype(np.float32)
 
                 elif self.is_left_or_right_block(horiz_tiles, vert_tiles, i_col, i_row):
@@ -359,14 +323,8 @@ class CLAHEOptimized:
                     lut_x_idx = 0 if i_col == 0 else horiz_tiles - 1
                     top_lut = luts[i_row - 1, lut_x_idx]
                     current_lut = luts[i_row, lut_x_idx]
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
-                        (
-                            self.interp_left_right_block_optimized(
-                                top_lut_weights, y_block, top_lut, current_lut
-                            )
-                        )
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
+                        (self.interp_left_right_block_optimized(top_lut_weights, y_block, top_lut, current_lut))
                     ).astype(np.float32)
 
                 elif self.is_neighbor_block(horiz_tiles, vert_tiles, i_col, i_row):
@@ -376,9 +334,7 @@ class CLAHEOptimized:
                     current_lut = luts[i_row, i_col - 1]
                     right_lut = luts[i_row, i_col]
 
-                    y_ceh[
-                        start_row_index:end_row_index, start_col_index:end_col_index
-                    ] = (
+                    y_ceh[start_row_index:end_row_index, start_col_index:end_col_index] = (
                         (
                             self.interp_neighbor_block_optimized(
                                 left_lut_weights,

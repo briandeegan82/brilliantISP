@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: color_space_conversion.py
 Description: Converts RGB to YUV or YCbCr
@@ -77,16 +78,12 @@ class ColorSpaceConversion:
 
         if self.conv_std == 1:
             # for BT. 709
-            self.rgb2yuv_mat = np.array(
-                [[47, 157, 16], [-26, -86, 112], [112, -102, -10]]
-            )
+            self.rgb2yuv_mat = np.array([[47, 157, 16], [-26, -86, 112], [112, -102, -10]])
         else:
 
             # for BT.601/407
             # conversion metrix with 8bit integer co-efficients - m=8
-            self.rgb2yuv_mat = np.array(
-                [[77, 150, 29], [131, -110, -21], [-44, -87, 138]]
-            )
+            self.rgb2yuv_mat = np.array([[77, 150, 29], [131, -110, -21], [-44, -87, 138]])
 
         # make nx3 2d matrix of image
         mat_2d = self.img.reshape((self.img.shape[0] * self.img.shape[1], 3))
@@ -96,9 +93,7 @@ class ColorSpaceConversion:
         # This replaces the old U/V scaling approach which is not equivalent.
         mat_2d_float = mat_2d.astype(np.float64)
         if self.parm_cse["is_enable"]:
-            mat_2d_float = self._apply_luma_preserving_saturation(
-                mat_2d_float.transpose()
-            ).transpose()
+            mat_2d_float = self._apply_luma_preserving_saturation(mat_2d_float.transpose()).transpose()
 
         # convert to 3xn for matrix multiplication
         mat2d_t = mat_2d_float.transpose()
@@ -122,9 +117,7 @@ class ColorSpaceConversion:
 
         # Modules after CSC need 8-bit YUV so converting it into 8-bit after Normalizing.
         yuv2d_t = yuv2d_t / (2 ** (self.bit_depth - 8))
-        yuv2d_t = np.where(
-            yuv2d_t >= 0, np.floor(yuv2d_t + 0.5), np.ceil(yuv2d_t - 0.5)
-        )
+        yuv2d_t = np.where(yuv2d_t >= 0, np.floor(yuv2d_t + 0.5), np.ceil(yuv2d_t - 0.5))
 
         yuv2d_t = np.clip(yuv2d_t, 0, 255)
 

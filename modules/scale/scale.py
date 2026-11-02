@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: scale.py
 Description: Implements both hardware friendly and non hardware freindly scaling with GPU acceleration
@@ -24,6 +25,7 @@ from modules.scale.bilinear_interpolation import BilinearInterpolation as BLI
 # Try to import GPU-accelerated version
 try:
     from modules.scale.scale_gpu import ScaleGPU
+
     GPU_VERSION_AVAILABLE = True
 except ImportError:
     GPU_VERSION_AVAILABLE = False
@@ -50,14 +52,14 @@ class Scale:
         self.get_scaling_params()
         # Initialize debug logger
         self.logger = get_debug_logger("Scale", config=self.platform)
-        
+
         # Check if GPU acceleration should be used
         self.use_gpu = False
         if GPU_VERSION_AVAILABLE:
             try:
                 from util.gpu_utils import is_gpu_available, should_use_gpu
-                self.use_gpu = (is_gpu_available() and 
-                               should_use_gpu((sensor_info["height"], sensor_info["width"]), 'resize'))
+
+                self.use_gpu = is_gpu_available() and should_use_gpu((sensor_info["height"], sensor_info["width"]), "resize")
             except ImportError:
                 self.use_gpu = False
 
@@ -71,13 +73,9 @@ class Scale:
             return self.img
 
         if self.img.dtype == "float32":
-            scaled_img = np.empty(
-                (self.new_size[0], self.new_size[1], 3), dtype="float32"
-            )
+            scaled_img = np.empty((self.new_size[0], self.new_size[1], 3), dtype="float32")
         else:
-            scaled_img = np.empty(
-                (self.new_size[0], self.new_size[1], 3), dtype="uint8"
-            )
+            scaled_img = np.empty((self.new_size[0], self.new_size[1], 3), dtype="uint8")
 
         # Use GPU-accelerated scaling if available and beneficial
         if self.use_gpu and GPU_VERSION_AVAILABLE:
@@ -180,7 +178,6 @@ class Scale2D:
         self.get_scaling_params()
 
     def resize_by_non_int_fact(self, red_fact, method):
-
         """ "
         Resize 2D array by non-integer factor n/d.
         Firstly, the array is upsacled n times then downscaled d times.
@@ -218,10 +215,7 @@ class Scale2D:
                     self.single_channel = bilinear_obj.bilinear_interpolation()
                 else:
                     if self.is_debug and i == 0:
-                        self.logger.info(
-                            "   - Invalid scale method. "
-                            "UpScaling with default Nearest Neighbour method..."
-                        )
+                        self.logger.info("   - Invalid scale method. " "UpScaling with default Nearest Neighbour method...")
                     nn_obj = NN(self.single_channel, upscale_to_size)
                     self.single_channel = nn_obj.scale_nearest_neighbor()
                 downscale_to_size = (
@@ -244,10 +238,7 @@ class Scale2D:
                     self.single_channel = bilinear_obj.downscale_by_int_factor()
                 else:
                     if self.is_debug and i == 0:
-                        self.logger.info(
-                            "   - Invalid scale method. "
-                            "DownScaling with default Nearest Neighbour method..."
-                        )
+                        self.logger.info("   - Invalid scale method. " "DownScaling with default Nearest Neighbour method...")
                     nn_obj = NN(self.single_channel, downscale_to_size)
                     self.single_channel = nn_obj.downscale_nearest_neighbor()
 
@@ -259,12 +250,9 @@ class Scale2D:
         scale_info = self.validate_input_output()
 
         # apply scaling according to the flow
-        return self.apply_algo(
-            scale_info, ([self.upscale_method, self.downscale_method])
-        )
+        return self.apply_algo(scale_info, ([self.upscale_method, self.downscale_method]))
 
     def apply_algo(self, scale_info, method):
-
         """
         Scale 2D array using hardware friendly approach comprising of 3 steps:
            1. Downscale with int factor
@@ -273,9 +261,7 @@ class Scale2D:
 
         # check if input size is valid
         if scale_info == [[None, None, None], [None, None, None]]:
-            self.logger.warning(
-                "   - Invalid input size. It must be one of: 1920x1080, 2592x1536, 2592x1944"
-            )
+            self.logger.warning("   - Invalid input size. It must be one of: 1920x1080, 2592x1536, 2592x1944")
             return self.single_channel
 
         # check if output size is valid
@@ -301,20 +287,15 @@ class Scale2D:
 
             # step 2: crop
             if scale_info[0][1] > 0 or scale_info[1][1] > 0:
-                self.single_channel = crop(
-                    self.single_channel, scale_info[0][1], scale_info[1][1]
-                )
+                self.single_channel = crop(self.single_channel, scale_info[0][1], scale_info[1][1])
 
                 if self.is_debug:
                     self.logger.info(
-                        f"   - Shape after cropping "
-                        f"({scale_info[0][1]}, {scale_info[1][1]}): {self.single_channel.shape}"
+                        f"   - Shape after cropping " f"({scale_info[0][1]}, {scale_info[1][1]}): {self.single_channel.shape}"
                     )
             # step 3: Scale with non-int factor
             if bool(scale_info[0][2]) or bool(scale_info[1][2]):
-                self.single_channel = self.resize_by_non_int_fact(
-                    (scale_info[0][2], scale_info[1][2]), method
-                )
+                self.single_channel = self.resize_by_non_int_fact((scale_info[0][2], scale_info[1][2]), method)
 
                 if self.is_debug:
                     self.logger.info(
@@ -369,9 +350,7 @@ class Scale2D:
 
         else:
             if self.is_debug:
-                self.logger.info(
-                    "   - Invalid scale method. Scaling with default Nearest Neighbor method..."
-                )
+                self.logger.info("   - Invalid scale method. Scaling with default Nearest Neighbor method...")
 
             nn_obj = NN(self.single_channel, self.new_size)
             return nn_obj.scale_nearest_neighbor()

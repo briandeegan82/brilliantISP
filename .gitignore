@@ -141,3 +141,6 @@ in_frames/
 ./module_output/
 ./docs/
 ./reports/
+
+# Calibration GUI working sessions
+tmp/gui_session/

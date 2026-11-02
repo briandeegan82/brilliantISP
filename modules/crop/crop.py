@@ -50,18 +50,12 @@ class Crop:
     def update_sensor_info(self, dictionary: SensorInfo) -> None:
         """This function updates the variable stored in the dictionary sensor info."""
         if self.enable:
-            if (
-                dictionary["height"] != self.new_size[0]
-                or dictionary["width"] != self.new_size[1]
-            ):
+            if dictionary["height"] != self.new_size[0] or dictionary["width"] != self.new_size[1]:
                 dictionary["height"] = self.new_size[0]
                 dictionary["width"] = self.new_size[1]
                 dictionary["orig_size"] = str(self.img.T.shape)
 
-    def crop(
-        self, img: RawBayerImage, rows_to_crop: int = 0, cols_to_crop: int = 0
-    ) -> RawBayerImage:
-
+    def crop(self, img: RawBayerImage, rows_to_crop: int = 0, cols_to_crop: int = 0) -> RawBayerImage:
         """
         Crop 2D array.
         Parameter:
@@ -82,8 +76,7 @@ class Crop:
                 ]
             else:
                 self.logger.warning(
-                    "   - Input/Output heights are not compatible. "
-                    "Bayer pattern will be disturbed if cropped!"
+                    "   - Input/Output heights are not compatible. " "Bayer pattern will be disturbed if cropped!"
                 )
         return img
 
@@ -103,7 +96,7 @@ class Crop:
             self.logger.warning(f"   - Invalid crop_x_start ({self.x_start}): region extends beyond image width")
             self.logger.warning(f"   - Adjusting to fit within image bounds")
             self.x_start = max(0, self.old_size[1] - self.new_size[1])
-        
+
         if self.y_start + self.new_size[0] > self.old_size[0]:
             self.logger.warning(f"   - Invalid crop_y_start ({self.y_start}): region extends beyond image height")
             self.logger.warning(f"   - Adjusting to fit within image bounds")
@@ -113,19 +106,18 @@ class Crop:
         if self.x_start % 2 != 0:
             self.logger.warning(f"   - crop_x_start ({self.x_start}) is odd, adjusting to even for Bayer alignment")
             self.x_start = (self.x_start // 2) * 2
-        
+
         if self.y_start % 2 != 0:
             self.logger.warning(f"   - crop_y_start ({self.y_start}) is odd, adjusting to even for Bayer alignment")
             self.y_start = (self.y_start // 2) * 2
 
         # Extract the region from (y_start, x_start) with size (new_height, new_width)
-        cropped_img = self.img[
-            self.y_start : self.y_start + self.new_size[0],
-            self.x_start : self.x_start + self.new_size[1]
-        ]
+        cropped_img = self.img[self.y_start : self.y_start + self.new_size[0], self.x_start : self.x_start + self.new_size[1]]
 
         if self.is_debug:
-            self.logger.info(f"   - Crop region: x={self.x_start}, y={self.y_start}, width={self.new_size[1]}, height={self.new_size[0]}")
+            self.logger.info(
+                f"   - Crop region: x={self.x_start}, y={self.y_start}, width={self.new_size[1]}, height={self.new_size[0]}"
+            )
             self.logger.info(f"   - Shape of cropped image = {cropped_img.shape}")
         return cropped_img
 

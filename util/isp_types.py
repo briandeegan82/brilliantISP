@@ -5,7 +5,6 @@ from typing import Any, Literal, Protocol, TypeAlias, TypedDict
 import numpy as np
 from numpy.typing import NDArray
 
-
 BayerPattern: TypeAlias = Literal["rggb", "grbg", "gbrg", "bggr"]
 ByteOrder: TypeAlias = Literal["little", "big"]
 ToneMapperName: TypeAlias = Literal[
@@ -69,6 +68,11 @@ class SensorInfo(RequiredSensorInfo, total=False):
     sensor: str
     endian_type: str
     data_format: str
+    data_alignment: str
+    bit_alignment: str
+    manual_bit_shift: int
+    horizontal_flip: bool
+    vertical_flip: bool
     embedded_rows_top: int
     embedded_rows_bottom: int
     orig_size: str

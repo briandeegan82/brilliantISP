@@ -8,6 +8,7 @@ It is developed by Brian Deegan and is based in part on [Infinite-ISP](https://g
 - Primary interfaces:
   - CLI pipeline scripts
   - Interactive tuning GUI (`tools/isp_tuning_gui.py`)
+  - Calibration GUI (`tools/isp_calibration_gui.py`) — Image Format + ISP Configuration
 
 ## Highlights
 
@@ -23,6 +24,7 @@ It is developed by Brian Deegan and is based in part on [Infinite-ISP](https://g
 - `brilliant_isp.py` - core `BrilliantISP` pipeline class
 - `isp_pipeline.py` - simplest single-image pipeline entry script
 - `tools/isp_tuning_gui.py` - tuning GUI
+- `tools/isp_calibration_gui.py` - two-window calibration GUI (format + ISP YAML)
 - `config/` - base and camera-specific YAML configs
 - `modules/` - individual ISP block implementations
 - `util/` - config helpers, histogram/debug utilities, shared types
@@ -73,6 +75,28 @@ Optional initial config:
 ```bash
 python tools/isp_tuning_gui.py --config config/AD_cam.yml
 ```
+
+## Calibration GUI
+
+Two windows (Image Format and ISP Configuration) that edit one YAML-shaped config and process a project-local session copy of the RAW file. Spec: `docs/GUI_DESIGN.md`.
+
+```bash
+python tools/isp_calibration_gui.py
+```
+
+Optional preset and skip session recover:
+
+```bash
+python tools/isp_calibration_gui.py --config config/SVS_cam.yml --no-recover
+```
+
+Working files land in `tmp/gui_session/<session_id>/` (`input.raw`, `config.yml`, `output.png`, `session.json`).
+
+Edits and exceptions are logged to:
+- `tmp/gui_session/<session_id>/gui.log` (this session)
+- `tmp/gui_session/calibration_gui.log` (all sessions)
+
+Use **Help → Open log folder…** to browse them.
 
 ### Core GUI workflow
 
@@ -125,6 +149,7 @@ These scripts are practical templates and may require local path edits before us
 
 ## Documentation Index
 
+- `docs/GUI_DESIGN.md` - calibration GUI specification
 - `docs/ISP_BLOCKS_AND_TUNING.md` - pipeline order and tuning guide
 - `docs/GAMMA_CORRECTION_FINAL_SOLUTION.md` - gamma placement and rationale
 - `docs/PPG_DEMOSAIC.md` - PPG demosaic details

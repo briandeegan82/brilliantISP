@@ -5,6 +5,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import time
 import numpy as np
 
@@ -66,18 +67,10 @@ class BlackLevelCorrection:
             raw[1::2, 1::2] = raw[1::2, 1::2] - b_offset
 
             if self.is_linearize is True:
-                raw[0::2, 0::2] = (
-                    raw[0::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                )
-                raw[0::2, 1::2] = (
-                    raw[0::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 0::2] = (
-                    raw[1::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 1::2] = (
-                    raw[1::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                )
+                raw[0::2, 0::2] = raw[0::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
+                raw[0::2, 1::2] = raw[0::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
+                raw[1::2, 0::2] = raw[1::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
+                raw[1::2, 1::2] = raw[1::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
 
         elif bayer == "bggr":
             raw[0::2, 0::2] = raw[0::2, 0::2] - b_offset
@@ -86,18 +79,10 @@ class BlackLevelCorrection:
             raw[1::2, 1::2] = raw[1::2, 1::2] - r_offset
 
             if self.is_linearize is True:
-                raw[0::2, 0::2] = (
-                    raw[0::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                )
-                raw[0::2, 1::2] = (
-                    raw[0::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 0::2] = (
-                    raw[1::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 1::2] = (
-                    raw[1::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                )
+                raw[0::2, 0::2] = raw[0::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
+                raw[0::2, 1::2] = raw[0::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
+                raw[1::2, 0::2] = raw[1::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
+                raw[1::2, 1::2] = raw[1::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
 
         elif bayer == "grbg":
             raw[0::2, 0::2] = raw[0::2, 0::2] - gr_offset
@@ -106,18 +91,10 @@ class BlackLevelCorrection:
             raw[1::2, 1::2] = raw[1::2, 1::2] - gb_offset
 
             if self.is_linearize is True:
-                raw[0::2, 0::2] = (
-                    raw[0::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                )
-                raw[0::2, 1::2] = (
-                    raw[0::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 0::2] = (
-                    raw[1::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 1::2] = (
-                    raw[1::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                )
+                raw[0::2, 0::2] = raw[0::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
+                raw[0::2, 1::2] = raw[0::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
+                raw[1::2, 0::2] = raw[1::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
+                raw[1::2, 1::2] = raw[1::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
 
         elif bayer == "gbrg":
             raw[0::2, 0::2] = raw[0::2, 0::2] - gb_offset
@@ -126,18 +103,10 @@ class BlackLevelCorrection:
             raw[1::2, 1::2] = raw[1::2, 1::2] - gr_offset
 
             if self.is_linearize is True:
-                raw[0::2, 0::2] = (
-                    raw[0::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                )
-                raw[0::2, 1::2] = (
-                    raw[0::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 0::2] = (
-                    raw[1::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                )
-                raw[1::2, 1::2] = (
-                    raw[1::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                )
+                raw[0::2, 0::2] = raw[0::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
+                raw[0::2, 1::2] = raw[0::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
+                raw[1::2, 0::2] = raw[1::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
+                raw[1::2, 1::2] = raw[1::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
 
         raw_blc = np.clip(raw, 0, (2**bpp) - 1).astype(np.uint32)
         return raw_blc

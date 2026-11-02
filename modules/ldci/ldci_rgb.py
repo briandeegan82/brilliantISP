@@ -18,7 +18,6 @@ import numpy as np
 from modules.ldci.clahe import CLAHE
 from util.isp_types import LDCIConfig, PlatformConfig, SensorInfo
 
-
 # BT.709 luma coefficients (same as boltISP's applyLdciRgb888)
 _BT709_R = 0.2126
 _BT709_G = 0.7152

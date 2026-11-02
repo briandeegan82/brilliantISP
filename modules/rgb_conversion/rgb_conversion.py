@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: color_space_conversion.py
 Description: Converts RGB to YUV or YCbCr
@@ -51,9 +52,7 @@ class RGBConversion:
         """
 
         # make nx3 2d matrix of image
-        mat_2d = self.yuv_img.reshape(
-            (self.yuv_img.shape[0] * self.yuv_img.shape[1], 3)
-        )
+        mat_2d = self.yuv_img.reshape((self.yuv_img.shape[0] * self.yuv_img.shape[1], 3))
 
         # convert to 3xn for matrix multiplication
         mat2d_t = mat_2d.transpose()

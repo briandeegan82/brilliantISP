@@ -1,4 +1,5 @@
 from util.debug_utils import get_debug_logger
+
 """
 File: color_correction_matrix.py
 Description: Applies the 3x3 correction matrix on the image

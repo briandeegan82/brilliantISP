@@ -6,6 +6,7 @@ Implementation inspired from: (OpenISP) https://github.com/cruxopen/openISP
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+
 import time
 import numpy as np
 
@@ -17,10 +18,10 @@ from modules.dead_pixel_correction.dynamic_dpc import DynamicDPC as DynDPC
 # Try to import Numba version
 try:
     from modules.dead_pixel_correction.dynamic_dpc_numba_optimized import DynamicDPCNumbaOptimized as DynDPCNumba
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-
 
 
 class DeadPixelCorrection:
