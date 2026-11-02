@@ -87,6 +87,69 @@ _TONE_MAPPERS = [
 ]
 _GAMMA_CURVES = ["srgb", "gamma"]
 _AWB_ALGORITHMS = ["grey_world", "norm_2", "pca"]
+_BAYER_PATTERNS = ["rggb", "bggr", "grbg", "gbrg"]
+
+# Color at 2x2 positions (row0col0, row0col1, row1col0, row1col1) for each CFA.
+# 'gr' / 'gb' distinguish the two greens for BLC remapping.
+_BAYER_POS_COLORS = {
+    "rggb": ("r", "gr", "gb", "b"),
+    "bggr": ("b", "gb", "gr", "r"),
+    "grbg": ("gr", "r", "b", "gb"),
+    "gbrg": ("gb", "b", "r", "gr"),
+}
+
+
+def _remap_blc_for_bayer_change(
+    blc: dict[str, Any], old_pattern: str, new_pattern: str
+) -> None:
+    """
+    Keep black-level offsets attached to physical CFA sites when the pattern label changes.
+
+    Offsets are stored by color name (r/gr/gb/b). Changing bayer_pattern reinterprets
+    which site each name refers to; without remapping, per-channel pedestals get applied
+    to the wrong photosites and produce a severe cast.
+    """
+    old_p = old_pattern.strip().lower()
+    new_p = new_pattern.strip().lower()
+    if old_p not in _BAYER_POS_COLORS or new_p not in _BAYER_POS_COLORS or old_p == new_p:
+        return
+    keys = ("r_offset", "gr_offset", "gb_offset", "b_offset")
+    if not all(k in blc for k in keys):
+        return
+    color_to_offset = {
+        "r": blc["r_offset"],
+        "gr": blc["gr_offset"],
+        "gb": blc["gb_offset"],
+        "b": blc["b_offset"],
+    }
+    # Positional pedestals under the old labeling
+    pos_offsets = [color_to_offset[c] for c in _BAYER_POS_COLORS[old_p]]
+    # Re-label those same sites for the new pattern
+    for color, off in zip(_BAYER_POS_COLORS[new_p], pos_offsets):
+        blc[f"{color}_offset"] = off
+    # Saturation levels follow the same remapping when present
+    sat_keys = ("r_sat", "gr_sat", "gb_sat", "b_sat")
+    if all(k in blc for k in sat_keys):
+        color_to_sat = {
+            "r": blc["r_sat"],
+            "gr": blc["gr_sat"],
+            "gb": blc["gb_sat"],
+            "b": blc["b_sat"],
+        }
+        pos_sats = [color_to_sat[c] for c in _BAYER_POS_COLORS[old_p]]
+        for color, sat in zip(_BAYER_POS_COLORS[new_p], pos_sats):
+            blc[f"{color}_sat"] = sat
+
+
+def _byte_order_from_endian_type(endian_type: Any) -> str:
+    """Map sensor_info.endian_type to load_raw byte_order ('little' | 'big')."""
+    et = str(endian_type or "").lower()
+    if "le" in et or "little" in et:
+        return "little"
+    if "be" in et or "big" in et:
+        return "big"
+    # Legacy configs often use ieee-be; default little for Lucid-style packed RAW
+    return "little"
 
 _DEBOUNCE_MS = 400  # milliseconds before auto-reprocess fires after a parameter change
 
@@ -105,9 +168,10 @@ _ABOUT_TEXT = (
     "  4. Save All (Ctrl+S) — saves the YAML config and output image together.\n"
     "     File → Save config / Save output image — save them separately.\n\n"
     "Parameters tab\n"
-    "  Sliders and dropdowns for the most-commonly tuned parameters.  Every "
-    "change is written immediately into the in-memory config and is included in "
-    "the next Process run.  Use Save config or Save All to persist to disk.\n\n"
+    "  Sliders and dropdowns for the most-commonly tuned parameters (Bayer CFA "
+    "pattern, gain, WB, tone mapper, demosaic, gamma, …).  Every change is "
+    "written immediately into the in-memory config and is included in the next "
+    "Process run.  Use Save config or Save All to persist to disk.\n\n"
     "Blocks tab\n"
     "  Toggle individual pipeline stages.  Click a block name for a context menu "
     "that opens its full YAML for editing (any parameter, not just is_enable).\n\n"
@@ -953,6 +1017,61 @@ class ISPTuningApp:
             self._redraw_crop_overlay()
             self._schedule_reprocess()
 
+        # ── Sensor / Bayer ────────────────────────────────────────────────
+        sensor = cfg.get("sensor_info", {})
+        if isinstance(sensor, dict):
+            sec = self._section("Sensor")
+            pattern = str(sensor.get("bayer_pattern", "rggb")).strip().lower()
+            if pattern not in _BAYER_PATTERNS:
+                pattern = "rggb"
+            # Keep config canonical (lowercase) so dropdown ↔ YAML stay in sync
+            sensor["bayer_pattern"] = pattern
+            self._param_widgets["sensor_info._bayer_prev"] = pattern
+            bayer_var = self._add_dropdown(
+                sec, "Bayer pattern:", "sensor_info.bayer_pattern",
+                pattern, _BAYER_PATTERNS, lambda *_: None,  # custom handler below
+            )
+
+            def on_bayer_change(*_args: Any) -> None:
+                new_pat = str(bayer_var.get()).strip().lower()
+                old_pat = str(
+                    self._param_widgets.get("sensor_info._bayer_prev", new_pat)
+                ).strip().lower()
+                if new_pat not in _BAYER_PATTERNS:
+                    return
+                # Write pattern first so subsequent sync sees it
+                sensor["bayer_pattern"] = new_pat
+                if old_pat != new_pat and old_pat in _BAYER_PATTERNS:
+                    blc = cfg.get("black_level_correction")
+                    if isinstance(blc, dict):
+                        _remap_blc_for_bayer_change(blc, old_pat, new_pat)
+                    # Manual WB gains are color gains; after a phase change they
+                    # no longer match the scene — reset unless AWB will re-estimate.
+                    awb = cfg.get("auto_white_balance", {})
+                    wb = cfg.get("white_balance", {})
+                    awb_on = isinstance(awb, dict) and bool(awb.get("is_enable", False))
+                    if isinstance(wb, dict) and not awb_on:
+                        wb["r_gain"] = 1.0
+                        wb["b_gain"] = 1.0
+                        r_var = self._param_vars.get("white_balance.r_gain")
+                        b_var = self._param_vars.get("white_balance.b_gain")
+                        if r_var is not None:
+                            r_var.set(1.0)
+                        if b_var is not None:
+                            b_var.set(1.0)
+                self._param_widgets["sensor_info._bayer_prev"] = new_pat
+                changed()
+
+            bayer_var.trace_add("write", on_bayer_change)
+            self.ttk.Label(
+                sec,
+                text=(
+                    "CFA phase at (0,0). Changing pattern remaps BLC offsets to the "
+                    "same physical sites and resets manual WB to 1.0 / 1.0."
+                ),
+                wraplength=280, font=("TkDefaultFont", 8), foreground="#666666",
+            ).pack(anchor=self.tk.W, padx=4, pady=(0, 2))
+
         # ── Digital Gain ──────────────────────────────────────────────────
         dg = cfg.get("digital_gain", {})
         if isinstance(dg, dict):
@@ -1677,7 +1796,13 @@ class ISPTuningApp:
                         str(self.raw_path.parent), tmp_cfg,
                         outFileName="", output_path=str(out_dir),
                     )
-                    isp_done.execute(img_path=self.raw_path.name)
+                    endian = (
+                        cfg.get("sensor_info", {}) or {}
+                    ).get("endian_type", "little")
+                    byte_order = _byte_order_from_endian_type(endian)
+                    isp_done.execute(
+                        img_path=self.raw_path.name, byte_order=byte_order
+                    )
                     rgb = isp_done.last_output_rgb
                 finally:
                     Path(tmp_cfg).unlink(missing_ok=True)

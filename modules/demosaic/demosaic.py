@@ -68,7 +68,7 @@ class Demosaic:
         parm_dga: DemosaicConfig,
     ) -> None:
         self.img = img
-        self.bayer = sensor_info["bayer_pattern"]
+        self.bayer = str(sensor_info["bayer_pattern"]).strip().lower()
         # self.bit_depth = sensor_info["output_bit_depth"]
         self.is_save = parm_dga["is_save"]
         self.sensor_info = sensor_info
@@ -78,11 +78,17 @@ class Demosaic:
         # Initialize debug logger
         self.logger = get_debug_logger("Demosaic", config=self.platform)
 
+        if self.bayer not in ("rggb", "bggr", "grbg", "gbrg"):
+            raise ValueError(
+                f"Unsupported bayer_pattern {sensor_info['bayer_pattern']!r}; "
+                "expected one of rggb, bggr, grbg, gbrg"
+            )
+
     def masks_cfa_bayer(self) -> DemosaicMasks:
         """
         Generating masks for the given bayer pattern
         """
-        pattern = self.bayer
+        self.bayer = str(self.sensor_info["bayer_pattern"]).strip().lower()
         # dict will be creating 3 channel boolean type array of given shape with the name
         # tag like 'r_channel': [False False ....] , 'g_channel': [False False ....] ,
         # 'b_channel': [False False ....]
@@ -93,7 +99,7 @@ class Demosaic:
         # Following comment will create boolean masks for each channel r_channel,
         # g_channel and b_channel
         for channel, (y_channel, x_channel) in zip(
-            pattern, [(0, 0), (0, 1), (1, 0), (1, 1)]
+            self.bayer, [(0, 0), (0, 1), (1, 0), (1, 1)]
         ):
             channels[channel][y_channel::2, x_channel::2] = True
 

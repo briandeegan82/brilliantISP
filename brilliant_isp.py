@@ -22,6 +22,7 @@ from util.config_merge import (
     normalize_config_paths,
     pipeline_config_paths,
 )
+from util.bayer_repair import green_zero_fraction, repair_zero_green_cfa
 from util.debug_utils import DebugLogger
 from util.debug_utils import get_debug_logger
 from util.histogram_utils import plot_histogram_comparison, estimate_dynamic_range
@@ -495,8 +496,44 @@ class BrilliantISP:
         else:
             img = rawpy.imread(raw_path)
             self.raw = img.raw_image
-            
 
+    def _maybe_repair_zero_green_cfa(self, raw: np.ndarray) -> np.ndarray:
+        """
+        Optionally reconstruct empty CFA green sites from neighboring R/B.
+
+        Controlled by sensor_info.repair_zero_green:
+          - true: always repair
+          - false: never repair
+          - auto / omitted: repair when >50% of green sites are <= 0
+
+        Prefer calling this after black-level correction so G is estimated from
+        pedestal-corrected R/B (reduces magenta/green zipper on broken dumps).
+        """
+        if self.sensor_info is None:
+            return raw
+        mode = self.sensor_info.get("repair_zero_green", "auto")
+        if mode is False or mode == "false":
+            return raw
+        pattern = str(self.sensor_info.get("bayer_pattern", "rggb")).strip().lower()
+        frac = green_zero_fraction(raw, pattern)  # type: ignore[arg-type]
+        should = mode is True or mode == "true" or (
+            str(mode).lower() in ("auto", "") and frac > 0.5
+        )
+        if not should:
+            if frac > 0.05:
+                self.logger.info(
+                    f"Green CFA zero fraction={frac:.1%} (below repair threshold)"
+                )
+            return raw
+        self.logger.warning(
+            f"Repairing empty CFA greens (zero fraction={frac:.1%}); "
+            "true spectral green is missing in this RAW — colors will be approximate."
+        )
+        repaired, filled = repair_zero_green_cfa(
+            raw, pattern  # type: ignore[arg-type]
+        )
+        self.logger.info(f"Filled {filled:.1%} of CFA green sites from R/B neighbors")
+        return repaired
 
     def run_pipeline_up_to_wb(self) -> None:
         """
@@ -528,6 +565,9 @@ class BrilliantISP:
         else:
             blc = BLC(dpc_raw, self.platform, self.sensor_info, self.parm_blc)
             blc_raw = blc.execute()
+
+        # Reconstruct empty CFA greens after BLC so estimates use pedestal-corrected R/B
+        blc_raw = self._maybe_repair_zero_green_cfa(blc_raw)
 
         # Decompanding
         if skip_disabled and not self.parm_cmpd["is_enable"]:
@@ -605,6 +645,9 @@ class BrilliantISP:
         else:
             blc = BLC(dpc_raw, self.platform, self.sensor_info, self.parm_blc)
             blc_raw = blc.execute()
+
+        # Reconstruct empty CFA greens after BLC so estimates use pedestal-corrected R/B
+        blc_raw = self._maybe_repair_zero_green_cfa(blc_raw)
 
         # =====================================================================
         # decompanding
@@ -945,7 +988,7 @@ class BrilliantISP:
         self,
         img_path: str | None = None,
         load_method: str = "auto",
-        byte_order: ByteOrder = "little",
+        byte_order: ByteOrder | None = None,
     ) -> None:
         """
         Start execution of Brilliant-ISP
@@ -953,7 +996,7 @@ class BrilliantISP:
         Args:
             img_path (str): Optional path to image file
             load_method (str): 'auto', '3byte', 'uint16', or 'original'
-            byte_order (str): 'little' or 'big'
+            byte_order (str): 'little' or 'big'; if None, derived from sensor_info.endian_type
             reverse_uint32 (bool): If True, reverse byte order within uint32 pixel values
         """
         if self.c_yaml is None:
@@ -961,9 +1004,18 @@ class BrilliantISP:
         if img_path is not None:
             self.raw_file = img_path
             self.c_yaml["platform"]["filename"] = self.raw_file
-    
+
+        if byte_order is None:
+            et = str((self.sensor_info or {}).get("endian_type", "")).lower()
+            if "le" in et or "little" in et:
+                byte_order = "little"
+            elif "be" in et or "big" in et or "ieee-be" in et:
+                byte_order = "big"
+            else:
+                byte_order = "little"
+
         self.load_raw(byte_order=byte_order)
-    
+
         # Print Logs to mark start of pipeline Execution
         self.logger.info(50 * "-" + "\nLoading RAW Image Done......\n")
         self.logger.info(f"Filename: {self.in_file}")

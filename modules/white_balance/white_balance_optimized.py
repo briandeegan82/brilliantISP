@@ -37,7 +37,7 @@ class WhiteBalanceOptimized:
         self.platform = platform
         self.sensor_info = sensor_info
         self.parm_wbc = parm_wbc
-        self.bayer = self.sensor_info["bayer_pattern"]
+        self.bayer = str(self.sensor_info["bayer_pattern"]).strip().lower()
         self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
         self.raw = None
         self.awb_gains = awb_gains

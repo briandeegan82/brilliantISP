@@ -1,0 +1,115 @@
+# Lucid Triton TRI054S-C — BayerRG24 linear HDR (image4).
+# Merges on top of config/base_hdr.yml.
+#
+# RAW: TRI054S-C_*_image4.raw (BayerRG24, 3 bytes/pix, little-endian)
+#
+# This frame has on-sensor HDR channel saturation plateaus (~8.3M codes on
+# R/G while B continues higher), so whites posterize. Prefer
+# triton_lauren_cam.yml + image6 for eSFR chart QA. Use this config when you
+# need a correct 24-bit load/TMO path for other BayerRG24 Tritons.
+
+platform:
+  filename: "TRI054S-C_221400748__260324153544_image4.raw"
+  short_output_names: true
+  skip_disabled_modules: true
+  plot_histograms: true
+
+sensor_info:
+  bayer_pattern: "rggb"
+  hdr_bit_depth: 24
+  bit_depth: 24
+  pipeline_rgb_bit_depth: 16
+  width: 2880
+  height: 1860
+  output_bit_depth: 8
+  sensor: "Triton_IMX490"
+  endian_type: "little"
+  data_format: "uint32"
+
+companding:
+  is_enable: false
+  pedestal: 0
+  companded: false
+
+dead_pixel_correction:
+  is_enable: true
+  dp_threshold: 64
+
+black_level_correction:
+  is_enable: true
+  r_offset: 2506300
+  gr_offset: 3116300
+  gb_offset: 3126300
+  b_offset: 3283200
+  is_linear: false
+  r_sat: 16777215
+  gr_sat: 16777215
+  gb_sat: 16777215
+  b_sat: 16777215
+
+digital_gain:
+  is_auto: false
+  is_enable: true
+  gain_array: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 16, 32, 64]
+  current_gain: 6  # 2x
+
+bayer_noise_reduction:
+  is_enable: true
+  filter_window: 5
+  r_std_dev_s: 0.5
+  r_std_dev_r: 0.1
+  g_std_dev_s: 0.5
+  g_std_dev_r: 0.1
+  b_std_dev_s: 0.5
+  b_std_dev_r: 0.08
+
+auto_white_balance:
+  is_enable: false
+
+white_balance:
+  is_enable: true
+  r_gain: 1.0
+  b_gain: 0.70
+
+demosaic:
+  algorithm: "malvar"
+
+color_correction_matrix:
+  is_enable: true
+  corrected_red: [1.0, 0.0, 0.0]
+  corrected_green: [0.0, 1.0, 0.0]
+  corrected_blue: [0.0, 0.0, 1.0]
+
+gamma_correction:
+  is_enable: true
+  curve: 'srgb'
+  gamma: 2.2
+
+auto_exposure:
+  is_enable: false
+
+color_saturation_enhancement:
+  is_enable: true
+  saturation_gain: 1.4
+
+ldci:
+  is_enable: false
+
+sharpen:
+  is_enable: true
+  sharpen_sigma: 2.0
+  sharpen_strength: 1.2
+
+tone_mapping:
+  is_enable: true
+  tone_mapping_before_demosaic: true
+  tone_mapper: 'hable_integer'
+
+hable_integer:
+  is_enable: true
+  is_plot_curve: true
+  exposure_bias: 3.0
+  white_point: 11.2
+  use_normalization: true
+  normalize_output: true
+  hdr_scale: 1.5

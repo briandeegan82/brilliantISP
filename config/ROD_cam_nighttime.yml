@@ -240,7 +240,7 @@ hdr_durand:
   is_plot_curve: true
   sigma_space: 8.0
   sigma_color: 8.0
-  contrast_factor: 2.0
+  contrast_factor: 2.5
   downsample_factor: 4
 hable:
   is_enable: false

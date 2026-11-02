@@ -32,7 +32,7 @@ class AutoWhiteBalance:
         self.underexposed_percentage = parm_awb["underexposed_percentage"]
         self.overexposed_percentage = parm_awb["overexposed_percentage"]
         self.flatten_img = None
-        self.bayer = self.sensor_info["bayer_pattern"]
+        self.bayer = str(self.sensor_info["bayer_pattern"]).strip().lower()
         # self.img = img
         self.algorithm = parm_awb["algorithm"]
         self.parm_wbc = parm_wbc
@@ -118,9 +118,11 @@ class AutoWhiteBalance:
         else:
             rgain, bgain = self.apply_gray_world()
 
-        # Check if r_gain and b_gain go out of bound
-        rgain = 1 if rgain <= 1 else rgain
-        bgain = 1 if bgain <= 1 else bgain
+        # Clamp to a sane range. Do NOT force gains >= 1: that prevents cutting
+        # a strong blue/red channel (common under lab LED / fluorescent light)
+        # and leaves a permanent color cast even with the correct Bayer phase.
+        rgain = float(np.clip(rgain, 0.25, 4.0))
+        bgain = float(np.clip(bgain, 0.25, 4.0))
 
         if self.is_debug:
             self.logger.info("   - AWB Actual Gains: ")

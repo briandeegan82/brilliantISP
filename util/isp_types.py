@@ -72,6 +72,9 @@ class SensorInfo(RequiredSensorInfo, total=False):
     embedded_rows_top: int
     embedded_rows_bottom: int
     orig_size: str
+    # Fill empty CFA green sites from neighboring R/B (pathological dumps).
+    # true/false, or "auto" (default): repair when >50% of green sites are zero.
+    repair_zero_green: bool | str
 
 
 class ParsedFileNameInfo(TypedDict):

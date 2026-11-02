@@ -41,7 +41,7 @@ class BlackLevelCorrection:
         """
 
         # get config parm
-        bayer = self.sensor_info["bayer_pattern"]
+        bayer = str(self.sensor_info["bayer_pattern"]).strip().lower()
         bpp = self.sensor_info["bit_depth"]
         r_offset = self.param_blc["r_offset"]
         gb_offset = self.param_blc["gb_offset"]
