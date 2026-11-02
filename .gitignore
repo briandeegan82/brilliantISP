@@ -144,3 +144,6 @@ in_frames/
 
 # Calibration GUI working sessions
 tmp/gui_session/
+
+# Local scratch/debug images
+.scratch_triton/
