@@ -1,0 +1,3 @@
+extends: SVS_cam.yml
+platform:
+  debug_enabled: false

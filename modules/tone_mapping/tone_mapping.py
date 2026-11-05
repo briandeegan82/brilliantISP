@@ -1,173 +1,211 @@
-"""
-Production-style tone mapping with bit-depth-aware normalization.
+"""Pipeline tone-mapping adapter: resolve config, map luminance, emit uint16.
 
-Input: Linear data from decompanding (before demosaic) or CCM (after demosaic).
-- Before demosaic: uint32, range 2^hdr_bit_depth - 1 (e.g. 24-bit → 16,777,215)
-- After demosaic:  uint16, range 65535
-Output: uint16 for pipeline (gamma expects 16-bit input).
-
-Supported tone_mapper values and their config sections:
-  durand            -> hdr_durand   (legacy alias: hdr_durand → treated as durand)
-  aces              -> aces
-  reinhard_integer  -> reinhard_integer (or legacy integer_tmo section)
-  aces_integer      -> aces_integer
-  hable             -> hable
-  hable_integer     -> hable_integer
+Resolves the effective spec live from the calling context each execute (so
+profiling/context mutations are honored), maps the declared-domain
+luminance through the shared engine, and recombines the original RGB
+ratio. Unsigned Bayer input is passed to integer backends unmodified;
+post-CCM fixed backend uses the exact widened weighted numerator
+(2126R+7152G+722B, declared range scaled by 10000) per the settled recipe.
 """
 
-from util.utils import save_output_array
+from __future__ import annotations
+
+from typing import Any, Mapping
+
 import numpy as np
-from typing import cast
 
 from util.isp_types import (
-    Float32Image,
-    PlatformConfig,
-    RawBayerImage,
-    RGBImage,
-    SensorInfo,
     ToneMappingContext,
-    ToneMappingParams,
-    UInt16Image,
-    UInt32Image,
+)
+
+from modules.tone_mapping.backends import map_luminance
+from modules.tone_mapping.normalization import (
+    check_code_range,
+    code_max_from_bits,
+    LUMA_DENOMINATOR,
+    recombine,
+    rgb_luminance,
+    rgb_luminance_numerator,
+)
+from modules.tone_mapping.registry import (
+    ResolvedToneMapping,
+    select_legacy_section,
+    resolve_tone_mapping,
 )
 
 
 class ToneMapping:
-    def __init__(self, img: RawBayerImage | RGBImage, pipeline_self: ToneMappingContext) -> None:
-        self.img_orig = img  # Passthrough when disabled
-        # Production-style: normalize using actual input bit depth
-        if pipeline_self.tone_mapping_before_demosaic:
-            input_max = 2 ** pipeline_self.sensor_info.get("hdr_bit_depth", 24) - 1
-        else:
-            input_max = 65535  # CCM outputs uint16
-        self.img = img.astype(np.float32) / input_max
-        self.input_max = input_max
-        pipeline_rgb_bits = pipeline_self.sensor_info.get("pipeline_rgb_bit_depth", 16)
-        self.output_max = 2**pipeline_rgb_bits - 1
-        self.is_save = pipeline_self.tone_mapping["is_save"]
-        self.method = pipeline_self.tone_mapping["tone_mapper"]
-        # Legacy / GUI mistake: section is hdr_durand but mapper key must be durand.
-        if self.method == "hdr_durand":
-            self.method = "durand"
-        self.enable = pipeline_self.tone_mapping["is_enable"]
+    """Thin pipeline adapter around the shared tone-mapping engine."""
+
+    def __init__(self, img: np.ndarray, pipeline_self: ToneMappingContext) -> None:
+        self.img_orig = img
         self.platform = pipeline_self.platform
         self.sensor_info = pipeline_self.sensor_info
-        self.param_durand = pipeline_self.param_durand
-        self.param_aces = cast(ToneMappingParams, getattr(pipeline_self, "param_aces", {}))
+        self.context = pipeline_self
         self.logger = pipeline_self.logger
-        self.bit_depth = self.sensor_info.get("output_bit_depth", 8)
-        self.tone_mapping_before_demosaic = pipeline_self.tone_mapping_before_demosaic
+        self.resolved = self._resolve()
+        self._apply(self.resolved)
+        for notice in self.resolved.notices:
+            self.logger.warning(f"tone_mapping: {notice}")
+        self._img_out: np.ndarray | None = None
 
-        if self.tone_mapping_before_demosaic is True:
-            self.Lw = self.img
-        else:
-            self.Lw = self.extract_luminance()
+    def _apply(self, r: ResolvedToneMapping) -> None:
+        self.resolved_spec = r.spec
+        self.placement = r.placement
+        self.method = r.spec.operator
+        self.enable = r.spec.enabled
+        self.is_save = r.is_save
+        self.is_plot_curve = r.is_plot_curve
+        self.tone_mapping_before_demosaic = r.placement == "pre_demosaic"
 
-        if self.method == "durand":
-            from modules.tone_mapping.durand.hdr_durand_fast import HDRDurandToneMapping
-
-            self.hdr = HDRDurandToneMapping(self.Lw, self.platform, self.sensor_info, self.param_durand)
-
-        elif self.method == "aces":
-            from modules.tone_mapping.aces.aces_tone_mapping import ACESToneMapping
-
-            self.hdr = ACESToneMapping(self.Lw, self.platform, self.sensor_info, self.param_aces)
-
-        elif self.method == "reinhard_integer":
-            from modules.tone_mapping.integer_tmo.integer_tone_mapping import IntegerReinhardToneMapping
-
-            param_int = cast(ToneMappingParams, getattr(pipeline_self, "param_integer_tmo", {}))
-            if self.tone_mapping_before_demosaic:
-                self.hdr = IntegerReinhardToneMapping(self.img_orig, self.platform, self.sensor_info, param_int)
-            else:
-                L_int = self._extract_luminance_int()
-                self.hdr = IntegerReinhardToneMapping(L_int, self.platform, self.sensor_info, param_int)
-            self._use_integer_tmo = True
-        elif self.method == "aces_integer":
-            from modules.tone_mapping.integer_tmo.aces_integer_tone_mapping import ACESIntegerToneMapping
-
-            param_aces_int = cast(ToneMappingParams, getattr(pipeline_self, "param_aces_integer", {}))
-            if self.tone_mapping_before_demosaic:
-                self.hdr = ACESIntegerToneMapping(self.img_orig, self.platform, self.sensor_info, param_aces_int)
-            else:
-                L_int = self._extract_luminance_int()
-                self.hdr = ACESIntegerToneMapping(L_int, self.platform, self.sensor_info, param_aces_int)
-            self._use_integer_tmo = True
-        elif self.method == "hable":
-            from modules.tone_mapping.hable.hable_tone_mapping import HableToneMapping
-
-            param_hable = cast(ToneMappingParams, getattr(pipeline_self, "param_hable", {}))
-            self.hdr = HableToneMapping(self.Lw, self.platform, self.sensor_info, param_hable)
-        elif self.method == "hable_integer":
-            from modules.tone_mapping.integer_tmo.hable_integer_tone_mapping import HableIntegerToneMapping
-
-            param_hable_int = cast(ToneMappingParams, getattr(pipeline_self, "param_hable_integer", {}))
-            if self.tone_mapping_before_demosaic:
-                self.hdr = HableIntegerToneMapping(self.img_orig, self.platform, self.sensor_info, param_hable_int)
-            else:
-                L_int = self._extract_luminance_int()
-                self.hdr = HableIntegerToneMapping(L_int, self.platform, self.sensor_info, param_hable_int)
-            self._use_integer_tmo = True
-        else:
-            raise ValueError(
-                f"Unknown tone mapping method: {self.method!r}. "
-                "Supported: 'durand' (YAML section hdr_durand), 'aces', "
-                "'reinhard_integer', 'aces_integer', 'hable', 'hable_integer'."
+    def _resolve(self) -> ResolvedToneMapping:
+        cfg: dict[str, Any] = {}
+        base = getattr(self.context, "c_yaml", None)
+        if isinstance(base, Mapping):
+            cfg.update(base)
+        live = getattr(self.context, "tone_mapping", None)
+        if isinstance(live, Mapping):
+            cfg["tone_mapping"] = dict(live)
+        tm = cfg.get("tone_mapping", {})
+        if not isinstance(tm, Mapping) or "operator" in tm or tm.get("is_enable") is False:
+            return resolve_tone_mapping(cfg)
+        selector = str(tm.get("tone_mapper", "reinhard_integer"))
+        selected_attr = {
+            "aces": "param_aces",
+            "aces_integer": "param_aces_integer",
+            "hable": "param_hable",
+            "hable_integer": "param_hable_integer",
+            "reinhard_integer": "param_integer_tmo",
+            "integer_tmo": "param_integer_tmo",
+            "durand": "param_durand",
+            "hdr_durand": "param_durand",
+        }.get(selector)
+        if selected_attr is not None:
+            section_name, _ = select_legacy_section(selector, cfg)
+            live_section = getattr(self.context, selected_attr, None)
+            other_alias = "integer_tmo" if section_name == "reinhard_integer" else "reinhard_integer"
+            represents_other_alias = (
+                selector in ("integer_tmo", "reinhard_integer")
+                and section_name in cfg
+                and other_alias in cfg
+                and live_section is cfg[other_alias]
             )
-        self._use_integer_tmo = getattr(self, "_use_integer_tmo", False)
+            if hasattr(self.context, selected_attr) and not represents_other_alias:
+                cfg[section_name] = live_section
+        return resolve_tone_mapping(cfg)
 
-    def extract_luminance(self) -> np.ndarray:
-        epsilon = 1e-6
-        Lw = 0.2126 * self.img[..., 0] + 0.7152 * self.img[..., 1] + 0.0722 * self.img[..., 2]
-        return np.maximum(Lw, epsilon)
+    def _input_max(self) -> int:
+        if self.placement == "pre_demosaic":
+            return code_max_from_bits(self.sensor_info, "hdr_bit_depth", 24, 32)
+        return code_max_from_bits(self.sensor_info, "pipeline_rgb_bit_depth", 16, 16)
 
-    def _extract_luminance_int(self) -> UInt32Image:
-        """Integer luminance for production-style path. L = (2126*R + 7152*G + 722*B) / 10000"""
+    def _output_max(self) -> int:
+        return code_max_from_bits(self.sensor_info, "pipeline_rgb_bit_depth", 16, 16)
+
+    def _fixed_luminance(self, img: np.ndarray, input_max: int) -> tuple[np.ndarray, np.ndarray]:
+        """Exact unsigned weighted numerator for fixed backend + float Y."""
+        if img.ndim == 2:
+            y = np.asarray(img, dtype=np.float64)
+            if img.dtype.kind == "u":
+                return np.asarray(img), y
+            return np.asarray(img), y
+        if img.dtype.kind != "u" or img.dtype.itemsize not in (1, 2, 4):
+            raise ValueError(
+                "fixed backend requires unsigned RGB input; choose float/lut "
+                "for floating sources"
+            )
+        if int(img.max()) > input_max:
+            raise ValueError("RGB codes exceed declared input_max")
+        num = rgb_luminance_numerator(img).astype(np.uint32)
+        return num, num.astype(np.float64) / LUMA_DENOMINATOR
+
+    def execute(
+        self,
+        visualize_output: bool = True,
+        save_output: bool = True,
+        *,
+        plot_curve: bool | None = None,
+    ) -> np.ndarray:
+        self.resolved = self._resolve()
+        self._apply(self.resolved)
+        spec = self.resolved_spec
+        input_max = float(self._input_max())
+        output_max = self._output_max()
         img = self.img_orig
-        L = (2126 * img[..., 0] + 7152 * img[..., 1] + 722 * img[..., 2]) // 10000
-        return np.maximum(L.astype(np.uint32), 1)
+        self._img_out = None
 
-    def combine_luminance(self, output_luminance: np.ndarray) -> np.ndarray:
-        chromaticity = self.img / self.Lw[..., np.newaxis]
-        return chromaticity * output_luminance[..., np.newaxis]
+        if not spec.enabled:
+            if self.placement == "post_ccm":
+                self.img = img
+                return img
+            scaled = np.clip(
+                np.asarray(img, dtype=np.float64) * (output_max / input_max),
+                0, float(output_max),
+            )
+            self.img = scaled.astype(np.uint16)
+            return self.img
+
+        if img.ndim == 2:
+            luminance = np.asarray(img)
+            mapped = map_luminance(
+                luminance,
+                input_max=input_max,
+                output_max=output_max,
+                config=spec,
+            )
+            result = np.clip(np.asarray(mapped, np.float64), 0, output_max).astype(np.uint16)
+        else:
+            if spec.backend == "fixed":
+                src, y_f = self._fixed_luminance(img, int(input_max))
+                mapped = map_luminance(
+                    src, input_max=input_max * LUMA_DENOMINATOR,
+                    output_max=output_max, config=spec,
+                )
+            else:
+                check_code_range(img, input_max, ValueError)
+                y_f = rgb_luminance(img)
+                mapped = map_luminance(
+                    y_f, input_max=input_max, output_max=output_max, config=spec,
+                )
+            result = recombine(mapped, img, y_f, output_max=output_max)
+        self.img = result
+        self._img_out = result
+
+        can_save = bool(save_output) and self.resolved.is_save
+        can_plot = bool(save_output) and bool(visualize_output) and (
+            self.resolved.is_plot_curve
+            if plot_curve is None else bool(plot_curve)
+        )
+        if can_save:
+            self.save()
+        if can_plot:
+            from modules.tone_mapping import diagnostics
+
+            diagnostics.plot_curve(spec, self.platform)
+        return result
 
     def save(self) -> None:
-        """
-        Function to save module output
-        """
-        if self.is_save:
-            save_output_array(
-                self.platform["in_file"],
-                self.img,
-                "Out_tonemapped_",
-                self.platform,
-                self.sensor_info["bit_depth"],
-                self.sensor_info["bayer_pattern"],
-            )
+        """Save the actual mapped output as native NPY under output_dir."""
+        if self._img_out is None:
+            return
+        from modules.tone_mapping import diagnostics
 
-    def execute(self, visualize_output: bool = True, save_output: bool = True) -> RawBayerImage | RGBImage | UInt16Image:
-        if self.enable is False:
-            # Passthrough: return input in pipeline format (uint16)
-            if self.tone_mapping_before_demosaic:
-                scaled = self.img_orig.astype(np.float32) * (self.output_max / self.input_max)
-                return np.clip(scaled, 0, self.output_max).astype(np.uint16)
-            return self.img_orig
+        diagnostics.save_mapped_output(
+            self._img_out,
+            platform=self.platform,
+            input_name=str(self.platform.get("in_file", "frame")),
+            module_name=f"tone_mapping_{self.method}_{self.resolved_spec.backend}",
+        )
 
-        if self._use_integer_tmo:
-            img_out = self.hdr.execute()  # Already uint16
-            if self.tone_mapping_before_demosaic is False:
-                # Combine luminance with chromaticity
-                L_int = self._extract_luminance_int()
-                chrom = self.img_orig.astype(np.float32) / np.maximum(L_int, 1)[..., np.newaxis]
-                img_out = (chrom * img_out[..., np.newaxis]).astype(np.uint16)
-            self.save()
-            return np.clip(img_out, 0, self.output_max).astype(np.uint16)
+    def extract_luminance(self) -> np.ndarray:
+        img = np.asarray(self.img_orig)
+        if img.ndim == 2:
+            return np.asarray(img, dtype=np.float64)
+        return rgb_luminance(img)
 
-        img_out = self.hdr.execute()
-        if self.tone_mapping_before_demosaic is False:
-            img_out = self.combine_luminance(img_out)
-        self.save()
-        # Chromaticity recombination can push saturated channels above 1.0; clip
-        # before the uint16 cast to avoid wraparound on bright colored pixels.
-        img_out_int = np.clip(img_out * self.output_max, 0, self.output_max).astype(np.uint16)
-        return img_out_int
+    def combine_luminance(self, output_luminance: np.ndarray) -> np.ndarray:
+        """Legacy chromaticity helper retained for callers."""
+        return recombine(
+            output_luminance, self.img_orig, self.extract_luminance(),
+            output_max=self._output_max(),
+        )

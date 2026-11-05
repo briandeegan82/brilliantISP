@@ -1,0 +1,49 @@
+Notices for brilliantisp_gpu/ops/reference_math.py and
+brilliantisp_gpu/ops/reference_math_data.py
+
+These files adapt, in numerical form only, the float32 natural-log table
+and polynomial from glibc's e_logf.c / e_logf_data.c (used as numerical
+source material for the _logf_mantissa primitive) and the split-constant
+base-10 reduction from Sun Microsystems' fdlibm e_log10f.c. The
+adaptation uses the source only as numerical formula/table
+configuration; the repository root license (Apache-2.0) is unchanged.
+The affected files are licensed conservatively as LGPL-2.1-or-later for
+the glibc-derived portions; the fdlibm log10 portion carries Sun's
+permissive grant notice below.
+
+----------------------------------------------------------------------
+glibc e_logf.c / e_logf_data.c header notice (LGPL-2.1-or-later):
+
+  Copyright (C) 2017-2024 Free Software Foundation, Inc.
+  This file is part of the GNU C Library.
+
+  The GNU C Library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  The GNU C Library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with the GNU C Library; if not, see
+  <https://www.gnu.org/licenses/>.
+
+Sources:
+  https://codebrowser.dev/glibc/glibc/sysdeps/ieee754/flt-32/e_logf.c.html
+  https://codebrowser.dev/glibc/glibc/sysdeps/ieee754/flt-32/e_logf_data.c.html
+
+----------------------------------------------------------------------
+Sun Microsystems e_log10f.c grant notice:
+
+  Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+  Developed at SunPro, a Sun Microsystems, Inc. business.
+  Permission to use, copy, modify, and distribute this
+  software is freely granted, provided that this notice
+  is preserved.
+
+Source:
+  https://codebrowser.dev/glibc/glibc/sysdeps/ieee754/flt-32/e_log10f.c.html

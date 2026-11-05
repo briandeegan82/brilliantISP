@@ -1,0 +1,66 @@
+{
+  "frozen_real_bnr_patch": {
+    "bytes": 11026,
+    "path": "/home/brian/ISP_ws/brilliantISP/tests/gpu/fixtures/bnr_exp_real_patch.npz",
+    "sha256": "826e37079da072d3fc4d6b8e9b83c6f091b7d96717bd32178632c1f9c504a072"
+  },
+  "inputs": 59414,
+  "numpy_version": "1.26.4",
+  "patch_provenance": {
+    "bbox_yxhw": [
+      800,
+      576,
+      32,
+      32
+    ],
+    "note": "Stage fixtures extracted from frozen full CPU capture; hdr_bit_depth=12 reflects active native code range4095, not legacy hdr24 declaration. No CPU reference recapture.",
+    "params": {
+      "b_std_dev_r": 0.1,
+      "b_std_dev_s": 0.8,
+      "filter_window": 5,
+      "g_std_dev_r": 0.15,
+      "g_std_dev_s": 0.8,
+      "is_enable": true,
+      "is_save": false,
+      "r_std_dev_r": 0.15,
+      "r_std_dev_s": 0.8
+    },
+    "safe_interior_margin": 8,
+    "sensor": {
+      "bayer_pattern": "rggb",
+      "bit_depth": 12,
+      "data_alignment": "LSB",
+      "data_format": "uint16",
+      "embedded_rows_bottom": 0,
+      "embedded_rows_top": 0,
+      "endian_type": "ieee-le",
+      "hdr_bit_depth": 12,
+      "height": 32,
+      "horizontal_flip": false,
+      "sensor": "Sony_IMX490",
+      "vertical_flip": false,
+      "width": 32
+    },
+    "source_reference_manifest": "/dev/shm/brilliantisp_gpu_corpus_7a9347f9/sdr_colorchecker/reference/manifest.json",
+    "target_yx": [
+      15,
+      14
+    ]
+  },
+  "profile": "NumPy 1.26.4 AVX2/FMA3 rational float32 exponential, range reduction and fused Horner",
+  "reference_coefficients": {
+    "bytes": 7826,
+    "path": "/home/brian/ISP_ws/brilliantISP/tmp/gpu_validation/m5/corpus_7a9347f9/sdr_colorchecker/npy_simd_data.h.numpy1264",
+    "sha256": "befa536863dadeddec0dff116dea5412e685000e2842a9a9907e8aee35bfea7c"
+  },
+  "reference_kernel": {
+    "bytes": 51064,
+    "path": "/home/brian/ISP_ws/brilliantISP/tmp/gpu_validation/m5/corpus_7a9347f9/sdr_colorchecker/loops_exponent_log.dispatch.c.src.numpy1264",
+    "sha256": "acd35d834ba287ddb73b3633300251f6b684fad9a5999a2b7c5e26a899ac3d5a"
+  },
+  "seed": 52471,
+  "source_archive": {
+    "sha256": "2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010",
+    "url": "https://files.pythonhosted.org/packages/65/6e/09db70a523a96d25e115e71cc56a6f9031e7b8cd166c1ac8438307c14058/numpy-1.26.4.tar.gz"
+  }
+}

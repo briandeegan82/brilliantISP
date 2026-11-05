@@ -1,4 +1,10 @@
-"""Quick Bayer/RAW mosaic preview for the calibration GUI (not the full ISP)."""
+"""Quick Bayer/RAW mosaic preview for the calibration GUI (not the full ISP).
+
+The preview decodes the configured input through the shared
+``util.raw_decode`` contract (storage/alignment/embedded rows/flips) and
+shows the frame BEFORE the pipeline's own crop — it is not a full-output
+parity check.
+"""
 
 from __future__ import annotations
 
@@ -8,20 +14,9 @@ from typing import Any
 import numpy as np
 
 from tools.gui.format_map import BAYER_PATTERNS
-from util.raw_io import apply_data_alignment, apply_raw_flips, flips_from_sensor_info, read_raw_payload
+from util.raw_decode import RawFormat, decode_raw
 
 _CHANNEL_INDEX = {"r": 0, "g": 1, "b": 2}
-
-
-def _dtype_for(endian: str, bit_depth: int, data_format: str) -> np.dtype:
-    fmt = (data_format or "").lower()
-    et = (endian or "").lower()
-    little = "le" in et or "little" in et
-    if "uint8" in fmt or bit_depth <= 8:
-        return np.dtype(np.uint8)
-    if "uint32" in fmt or bit_depth > 16:
-        return np.dtype("<u4" if little else ">u4")
-    return np.dtype("<u2" if little else ">u2")
 
 
 def load_bayer_array(
@@ -32,36 +27,49 @@ def load_bayer_array(
     endian: str = "ieee-be",
     bit_depth: int = 16,
     data_format: str = "uint16",
+    storage_format: str | None = None,
+    source_format: str = "auto",
+    bayer_pattern: str = "rggb",
     data_alignment: str = "LSB",
     manual_bit_shift: int | None = None,
     header_bytes: int = 0,
+    row_stride_bytes: int | None = None,
+    word_order: str = "low_first",
+    embedded_rows_top: int = 0,
+    embedded_rows_bottom: int = 0,
     horizontal_flip: bool = False,
     vertical_flip: bool = False,
 ) -> np.ndarray:
-    payload = read_raw_payload(path)
-    raw = payload.data
-    skip = max(0, int(header_bytes))
-    if payload.is_pgm:
-        skip = 0
-        if payload.pgm_width:
-            width = int(payload.pgm_width)
-        if payload.pgm_height:
-            height = int(payload.pgm_height)
-    payload_bytes = raw[skip:]
-    dtype = _dtype_for(endian, bit_depth, data_format)
-    need = int(width) * int(height) * dtype.itemsize
-    if len(payload_bytes) < need:
-        raise ValueError(f"RAW too small for {width}x{height} {dtype}: need {need} bytes, got {len(payload_bytes)}")
-    arr = np.frombuffer(payload_bytes[:need], dtype=dtype).reshape((int(height), int(width)))
-    arr = apply_data_alignment(np.asarray(arr), bit_depth, data_alignment, manual_bit_shift)
-    return apply_raw_flips(arr, horizontal_flip, vertical_flip)
+    sensor: dict[str, Any] = {
+        "width": width,
+        "height": height,
+        "bit_depth": bit_depth,
+        "bayer_pattern": bayer_pattern,
+        "endian_type": endian,
+        "data_alignment": data_alignment,
+        "manual_bit_shift": manual_bit_shift,
+        "header_bytes": header_bytes,
+        "row_stride_bytes": row_stride_bytes,
+        "word_order": word_order,
+        "horizontal_flip": horizontal_flip,
+        "vertical_flip": vertical_flip,
+        "embedded_rows_top": embedded_rows_top,
+        "embedded_rows_bottom": embedded_rows_bottom,
+        "source_format": source_format,
+    }
+    if storage_format is not None:
+        sensor["storage_format"] = storage_format
+    else:
+        sensor["data_format"] = data_format
+    fmt = RawFormat.from_sensor_info(sensor)
+    return decode_raw(path, fmt).pixels
 
 
 def mosaic_preview(bayer: np.ndarray, pattern: str = "rggb") -> np.ndarray:
     """Colorize CFA sites and stretch to 8-bit RGB for display."""
     pat = str(pattern).lower()
     if pat not in BAYER_PATTERNS:
-        pat = "rggb"
+        raise ValueError(f"unknown bayer_pattern {pattern!r}")
     letters = pat.upper()
     img = bayer.astype(np.float32)
     finite = img[np.isfinite(img)]
@@ -80,22 +88,23 @@ def mosaic_preview(bayer: np.ndarray, pattern: str = "rggb") -> np.ndarray:
     return (rgb * 255.0).astype(np.uint8)
 
 
-def preview_from_config(path: str | Path, config: dict[str, Any], header_bytes: int = 0) -> np.ndarray:
-    sensor = config.get("sensor_info") or {}
-    hflip, vflip = flips_from_sensor_info(sensor)
-    manual_shift = sensor.get("manual_bit_shift")
-    manual_shift = int(manual_shift) if manual_shift is not None else None
-    bayer = load_bayer_array(
-        path,
-        width=int(sensor.get("width") or 0),
-        height=int(sensor.get("height") or 0),
-        endian=str(sensor.get("endian_type") or "ieee-le"),
-        bit_depth=int(sensor.get("bit_depth") or 16),
-        data_format=str(sensor.get("data_format") or "uint16"),
-        data_alignment=str(sensor.get("data_alignment") or sensor.get("bit_alignment") or "LSB"),
-        manual_bit_shift=manual_shift,
-        header_bytes=header_bytes,
-        horizontal_flip=hflip,
-        vertical_flip=vflip,
-    )
-    return mosaic_preview(bayer, str(sensor.get("bayer_pattern") or "rggb"))
+def preview_from_config(
+    path: str | Path,
+    config: dict[str, Any],
+    header_bytes: int | None = None,
+) -> np.ndarray:
+    """Decode a source preview BEFORE the pipeline's own crop stage.
+
+    Returns the aligned/trimmed/flipped input mosaic — not a processed
+    output preview. Uses the same ``RawFormat.from_sensor_info`` contract
+    as the pipeline, so invalid fields fail identically.
+    """
+    sensor = config.get("sensor_info")
+    if not isinstance(sensor, dict):
+        raise ValueError("config must contain a sensor_info mapping")
+    fmt_sensor = dict(sensor)
+    if header_bytes is not None:
+        fmt_sensor["header_bytes"] = header_bytes
+    fmt = RawFormat.from_sensor_info(fmt_sensor)
+    decoded = decode_raw(path, fmt)
+    return mosaic_preview(decoded.pixels, decoded.bayer_pattern)

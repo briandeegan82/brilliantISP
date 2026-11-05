@@ -5,6 +5,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 """
 
+import math
 import numpy as np
 from scipy import ndimage
 
@@ -42,3 +43,28 @@ class UnsharpMasking:
         else:
             self.img[:, :, 0] = np.uint8(np.clip(sharpened, 0, 255))
         return self.img
+
+
+def apply_luma(
+    luma: np.ndarray,
+    *,
+    scale: float,
+    sigma: float,
+    strength: float,
+) -> np.ndarray:
+    """Native plane unsharp mask: clip(y + strength*(y - smooth), 0, 1).
+
+    Same SciPy Gaussian (``gaussian_filter``, ``mode='reflect'``,
+    ``truncate=4``); normalized math, checked float32 restore.
+    """
+    from scipy.ndimage import gaussian_filter
+    from util.luma import normalize_plane, restore_plane
+
+    for name, value in (("sigma", sigma), ("strength", strength)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not math.isfinite(float(value)) or float(value) < 0:
+            raise ValueError(f"{name} must be a finite nonnegative number, got {value!r}")
+    y = normalize_plane(luma, scale=scale)
+    smooth = gaussian_filter(y, float(sigma), mode="reflect", truncate=4)
+    out = np.clip(y + float(strength) * (y - smooth), 0.0, 1.0)
+    return restore_plane(out, scale=scale)

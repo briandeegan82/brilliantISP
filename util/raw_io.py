@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -51,6 +51,8 @@ def parse_pgm_header(data: bytes) -> tuple[str, int, int, int, int] | None:
     Parse a Netpbm PGM header.
 
     Returns (magic, width, height, maxval, payload_offset) or None if not PGM.
+    The separator after maxval is one whitespace byte; a CRLF pair counts as
+    a single logical separator.
     """
     if len(data) < 3 or data[:2] not in (b"P2", b"P5"):
         return None
@@ -65,7 +67,12 @@ def parse_pgm_header(data: bytes) -> tuple[str, int, int, int, int] | None:
     # happen to look like whitespace are not eaten.
     if i >= len(data):
         raise ValueError("Truncated PGM header after maxval")
-    i += 1
+    if data[i] not in (9, 10, 13, 32):
+        raise ValueError("PGM maxval must be followed by a whitespace separator")
+    if data[i] == 13 and i + 1 < len(data) and data[i + 1] == 10:
+        i += 2
+    else:
+        i += 1
     try:
         width = int(width_s)
         height = int(height_s)
@@ -81,16 +88,25 @@ def _p2_payload_bytes(text: bytes, width: int, height: int, maxval: int) -> byte
     values: list[int] = []
     i = 0
     n = len(text)
+    need = width * height
     while i < n:
         i = _skip_ws_and_comments(text, i)
         if i >= n:
             break
         token, i = _read_ascii_token(text, i)
-        values.append(int(token))
-    need = width * height
+        if not token.isdigit() and not (
+            token.startswith("-") and token[1:].isdigit()
+        ):
+            raise ValueError(f"Invalid P2 sample {token!r}")
+        value = int(token)
+        if value < 0 or value > maxval:
+            raise ValueError(f"P2 sample {value} out of range 0..{maxval}")
+        values.append(value)
     if len(values) < need:
         raise ValueError(f"P2 PGM too short: need {need} samples, got {len(values)}")
-    arr = np.asarray(values[:need], dtype=np.uint16 if maxval > 255 else np.uint8)
+    if len(values) > need:
+        raise ValueError(f"P2 PGM has surplus samples: need {need}, got {len(values)}")
+    arr = np.asarray(values, dtype=np.uint16 if maxval > 255 else np.uint8)
     if maxval > 255:
         # Netpbm 16-bit raster is big-endian.
         return arr.astype(">u2").tobytes()
@@ -113,7 +129,9 @@ def read_raw_payload(path: str | Path) -> RawPayload:
         need = width * height * sample_bytes
         if len(raster) < need:
             raise ValueError(f"P5 PGM raster too small for {width}x{height}: need {need} bytes, got {len(raster)}")
-        data = raster[:need]
+        if len(raster) > need:
+            raise ValueError(f"P5 PGM raster too large for {width}x{height}: need {need} bytes, got {len(raster)}")
+        data = raster
     return RawPayload(
         data=data,
         header_bytes=offset,
@@ -136,7 +154,7 @@ def apply_raw_flips(image: np.ndarray, horizontal: bool, vertical: bool) -> np.n
     return out
 
 
-def flips_from_sensor_info(sensor: dict[str, Any] | None) -> tuple[bool, bool]:
+def flips_from_sensor_info(sensor: Mapping[str, Any] | None) -> tuple[bool, bool]:
     sensor = sensor or {}
     return bool(sensor.get("horizontal_flip", False)), bool(sensor.get("vertical_flip", False))
 
@@ -192,6 +210,6 @@ def apply_data_alignment(
     return ((image.astype(np.uint32) >> shift) & mask).astype(out_dtype)
 
 
-def alignment_from_sensor_info(sensor: dict[str, Any] | None) -> str:
+def alignment_from_sensor_info(sensor: Mapping[str, Any] | None) -> str:
     sensor = sensor or {}
     return str(sensor.get("data_alignment") or sensor.get("bit_alignment") or "LSB")

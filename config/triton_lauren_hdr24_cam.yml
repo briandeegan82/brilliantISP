@@ -23,7 +23,7 @@ sensor_info:
   height: 1860
   output_bit_depth: 8
   sensor: "Triton_IMX490"
-  endian_type: "little"
+  endian_type: "ieee-le"
   data_format: "uint32"
 
 companding:

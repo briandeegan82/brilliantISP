@@ -9,8 +9,10 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 """
 import time
 import numpy as np
+from typing import cast
 
-from util.isp_types import AWBGains, PlatformConfig, RawBayerImage, SensorInfo, UInt32Image, WhiteBalanceConfig
+from util.isp_types import AWBGains, BayerImage, Float32Image, PlatformConfig, RawBayerImage, SensorInfo, UInt32Image, WhiteBalanceConfig
+from util.native_array import as_float32
 from util.utils import save_output_array
 
 
@@ -21,7 +23,7 @@ class WhiteBalanceOptimized:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: BayerImage,
         platform: PlatformConfig,
         sensor_info: SensorInfo,
         parm_wbc: WhiteBalanceConfig,
@@ -87,6 +89,38 @@ class WhiteBalanceOptimized:
 
         return raw_whitebal
 
+    def _apply_gains_linear(self, redgain: float, bluegain: float) -> np.ndarray:
+        with np.errstate(over="ignore", invalid="ignore"):
+            raw = self.img.astype(np.float64)
+            if self.bayer == "rggb":
+                raw[::2, ::2] *= redgain
+                raw[1::2, 1::2] *= bluegain
+            elif self.bayer == "bggr":
+                raw[::2, ::2] *= bluegain
+                raw[1::2, 1::2] *= redgain
+            elif self.bayer == "grbg":
+                raw[1::2, ::2] *= bluegain
+                raw[::2, 1::2] *= redgain
+            elif self.bayer == "gbrg":
+                raw[1::2, ::2] *= redgain
+                raw[::2, 1::2] *= bluegain
+        return raw
+
+    def compute_linear(self) -> Float32Image:
+        """Native linear path: float32 code-valued output, no clip/cast.
+
+        Manual mode uses the config r_gain/b_gain; auto mode uses the
+        supplied awb_gains. Disabled returns the source as float32.
+        """
+        if not self.enable:
+            return as_float32(self.img, name="white_balance")
+        if self.is_auto:
+            redgain, bluegain = float(self.awb_gains[0]), float(self.awb_gains[1])
+        else:
+            redgain = float(self.parm_wbc.get("r_gain", 1.0))
+            bluegain = float(self.parm_wbc.get("b_gain", 1.0))
+        return as_float32(self._apply_gains_linear(redgain, bluegain), name="white_balance")
+
     def save(self) -> None:
         """
         Function to save module output
@@ -114,4 +148,4 @@ class WhiteBalanceOptimized:
             self.img = wb_out
 
         self.save()
-        return self.img
+        return cast(RawBayerImage, self.img)

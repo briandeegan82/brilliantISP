@@ -11,7 +11,8 @@ import time
 from typing import cast
 import numpy as np
 from util.debug_utils import get_debug_logger
-from util.isp_types import LensShadingCorrectionConfig, PlatformConfig, RawBayerImage, SensorInfo
+from util.isp_types import BayerImage, Float32Image, LensShadingCorrectionConfig, PlatformConfig, RawBayerImage, SensorInfo
+from util.native_array import as_float32
 from util.utils import save_output_array
 
 
@@ -40,7 +41,7 @@ class LensShadingCorrection:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: BayerImage,
         platform: PlatformConfig,
         sensor_info: SensorInfo,
         parm_lsc: LensShadingCorrectionConfig,
@@ -67,10 +68,8 @@ class LensShadingCorrection:
         self.bayer = sensor_info.get("bayer_pattern", "rggb").lower()
         self.height, self.width = self.img.shape
 
-        # Output max for clipping (HDR-aware)
-        hdr_bits = sensor_info.get("hdr_bit_depth", 24)
-        if self.img.max() <= 65535:
-            hdr_bits = 16
+        # Output max for clipping (declared HDR depth; never image-peak inferred)
+        hdr_bits = sensor_info.get("hdr_bit_depth", sensor_info["bit_depth"])
         self.output_max = 2**hdr_bits - 1
 
     def _build_gain_maps(self) -> None:
@@ -109,8 +108,18 @@ class LensShadingCorrection:
         else:
             raise ValueError(f"Unsupported bayer_pattern: {self.bayer}")
 
-        out = np.clip(out, 0, self.output_max)
         return out
+
+    def _apply_lsc_clipped(self) -> np.ndarray:
+        return np.clip(self._apply_lsc(), 0, self.output_max)
+
+    def compute_linear(self) -> Float32Image:
+        """Native linear path: float32 code-valued gain output, no clip."""
+        if not self.enable:
+            return cast(Float32Image, as_float32(self.img, name="lens_shading_correction"))
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            out = self._apply_lsc()
+        return cast(Float32Image, as_float32(out, name="lens_shading_correction"))
 
     def execute(self) -> RawBayerImage:
         """Execute lens shading correction."""
@@ -126,7 +135,7 @@ class LensShadingCorrection:
             )
 
         start = time.time()
-        out = self._apply_lsc()
+        out = self._apply_lsc_clipped()
 
         if self.output_max > 65535:
             result = out.astype(np.uint32)

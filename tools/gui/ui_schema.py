@@ -1,5 +1,7 @@
 """ISP Config window section order and known enum fields."""
 
+from util.config_schema import spec_map
+
 ISP_SECTION_ORDER = [
     "platform",
     "sensor_info",
@@ -34,39 +36,10 @@ ISP_SECTION_ORDER = [
     "yuv_conversion_format",
 ]
 
+_SPEC_MAP = spec_map()
+
 ENUM_CHOICES: dict[str, tuple[str, ...]] = {
-    "sensor_info.bayer_pattern": ("rggb", "grbg", "gbrg", "bggr"),
-    "sensor_info.endian_type": ("ieee-le", "ieee-be"),
-    "sensor_info.data_format": ("uint8", "uint16", "uint32"),
-    "demosaic.algorithm": (
-        "bilinear",
-        "malvar",
-        "vng_opt",
-        "hamilton_adams",
-        "ppg",
-        "ahd",
-        "lmmse",
-    ),
-    "tone_mapping.tone_mapper": (
-        "reinhard_integer",
-        "aces",
-        "aces_integer",
-        "hable",
-        "hable_integer",
-        "durand",
-    ),
-    "gamma_correction.curve": ("srgb", "gamma"),
-    "auto_white_balance.algorithm": ("grey_world", "norm_2", "pca"),
-    "yuv_conversion_format.conv_type": ("444", "422"),
-    "digital_gain.exposure_correction_mode": ("direct", "step"),
-    "auto_exposure.exposure_correction_mode": ("direct", "step"),
-    "aces.variant": ("fitted", "canonical"),
-    "aces.output_transform": ("sRGB", "Rec709", "none"),
-    "scale.algorithm": ("Nearest_Neighbor", "Bilinear"),
-    "scale.upscale_method": ("Nearest_Neighbor", "Bilinear"),
-    "scale.downscale_method": ("Nearest_Neighbor", "Bilinear"),
-    "platform.debug_log_level": ("DEBUG", "INFO", "WARNING", "ERROR"),
-    "platform.save_format": ("png", "jpg", "tiff"),
+    path: spec.choices for path, spec in _SPEC_MAP.items() if spec.choices
 }
 
 RGGB_START_LABELS = (

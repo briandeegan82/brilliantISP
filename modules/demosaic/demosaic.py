@@ -9,7 +9,8 @@ import time
 import numpy as np
 from typing import Literal, cast
 
-from util.isp_types import DemosaicConfig, DemosaicMasks, PlatformConfig, RawBayerImage, SensorInfo, UInt16Image
+from util.isp_types import BayerImage, DemosaicConfig, DemosaicMasks, Float32Image, PlatformConfig, RawBayerImage, SensorInfo, UInt16Image
+from util.native_array import as_float32
 from util.utils import save_output_array
 from util.debug_utils import get_debug_logger, is_debug_enabled
 from modules.demosaic.malvar_he_cutler import Malvar as MAL
@@ -50,7 +51,7 @@ class Demosaic:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: BayerImage,
         platform: PlatformConfig,
         sensor_info: SensorInfo,
         parm_dga: DemosaicConfig,
@@ -113,12 +114,25 @@ class Demosaic:
                 - "ahd": AHD - Adaptive Homogeneity-Directed (dual interpolation, excellent quality)
                 - "ahd_opt": Optimized AHD with enhanced homogeneity analysis (superior quality)
         """
+        demos_out = self._dispatch(algorithm, cpu_only=False)
+        return self._finish_uint16(demos_out)
+
+    def _finish_uint16(self, demos_out: np.ndarray) -> UInt16Image:
+        """Pipeline convention: output 16-bit RGB for CCM."""
+        output_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
+        output_max = 2**output_bit_depth - 1
+        demos_out = np.clip(demos_out, 0, output_max)
+        demos_out = demos_out.astype(np.uint16)
+        return cast(UInt16Image, demos_out)
+
+    def _dispatch(self, algorithm: str, *, cpu_only: bool) -> np.ndarray:
+        """Shared algorithm dispatch; ``cpu_only`` disables the CuPy MAL path."""
         # 3D masks according to the given bayer
         masks = self.masks_cfa_bayer()
 
         if algorithm == "malvar":
             # Use CuPy version if available and beneficial
-            if CUPY_AVAILABLE:
+            if CUPY_AVAILABLE and not cpu_only:
                 mal = MALCUPY(self.img, masks)
             else:
                 mal = MAL(self.img, masks)
@@ -174,13 +188,33 @@ class Demosaic:
 
         else:
             raise ValueError(f"Unknown demosaic algorithm: {algorithm}")
+        return demos_out
 
-        # Pipeline convention: output 16-bit RGB for CCM
-        output_bit_depth = self.sensor_info.get("pipeline_rgb_bit_depth", 16)
-        output_max = 2**output_bit_depth - 1
-        demos_out = np.clip(demos_out, 0, output_max)
-        demos_out = demos_out.astype(np.uint16)
-        return cast(UInt16Image, demos_out)
+    def compute_linear(self, algorithm: str | None = None) -> Float32Image:
+        """Native linear path: float32 65535-code-equivalent RGB, no clip.
+
+        Always uses the CPU kernels (never the CuPy MAL variant). Input is
+        already in the fixed 65535 code domain; every known CFA sample is
+        restored exactly from the source afterward so interpolators that
+        filter through known sites (e.g. AHD) still reproduce them.
+        """
+        algo = self.algorithm if algorithm is None else algorithm
+        src = np.asarray(self.img)
+        if src.ndim != 2 or src.size == 0:
+            raise ValueError(f"demosaic input must be a nonempty 2-D frame, got {src.shape}")
+        if not np.all(np.isfinite(src)):
+            raise ValueError("demosaic input must be finite")
+        demos_out = self._dispatch(algo, cpu_only=True)
+        out = as_float32(demos_out, name=f"demosaic {algo}")
+        if out.shape != src.shape + (3,):
+            raise ValueError(
+                f"demosaic output shape {out.shape} does not match {src.shape + (3,)}"
+            )
+        src32 = as_float32(src, name="demosaic input")
+        masks = self.masks_cfa_bayer()
+        for c, mask in enumerate(masks):
+            out[..., c][mask] = src32[mask]
+        return out
 
     def save(self) -> None:
         """

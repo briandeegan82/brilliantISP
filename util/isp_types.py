@@ -9,12 +9,21 @@ BayerPattern: TypeAlias = Literal["rggb", "grbg", "gbrg", "bggr"]
 ByteOrder: TypeAlias = Literal["little", "big"]
 ToneMapperName: TypeAlias = Literal[
     "durand",
+    "hdr_durand",
     "aces",
     "reinhard_integer",
+    "integer_tmo",
     "aces_integer",
     "hable",
     "hable_integer",
 ]
+
+ToneMapperOperator: TypeAlias = Literal[
+    "aces_fitted", "hable", "reinhard", "durand",
+]
+ToneMapperBackend: TypeAlias = Literal["float", "lut", "fixed", "cpu"]
+ToneMappingPlacement: TypeAlias = Literal["pre_demosaic", "post_ccm"]
+ToneMappingNormalization: TypeAlias = Literal["declared_range", "per_frame"]
 
 UInt8Image: TypeAlias = NDArray[np.uint8]
 UInt16Image: TypeAlias = NDArray[np.uint16]
@@ -23,6 +32,7 @@ Float32Image: TypeAlias = NDArray[np.float32]
 Float64Image: TypeAlias = NDArray[np.float64]
 
 RawBayerImage: TypeAlias = UInt16Image | UInt32Image
+BayerImage: TypeAlias = RawBayerImage | Float32Image
 RGBImage: TypeAlias = UInt8Image | UInt16Image | Float32Image
 YUVImage: TypeAlias = UInt8Image
 AWBGains: TypeAlias = tuple[float, float] | tuple[float, float, float, float]
@@ -52,6 +62,7 @@ class PlatformConfig(RequiredPlatformConfig, total=False):
     histogram_show_log: bool
     histogram_show_channels: bool
     skip_disabled_modules: bool
+    final_output_dir: str
 
 
 class RequiredSensorInfo(TypedDict):
@@ -68,6 +79,11 @@ class SensorInfo(RequiredSensorInfo, total=False):
     sensor: str
     endian_type: str
     data_format: str
+    storage_format: str
+    source_format: str
+    header_bytes: int
+    row_stride_bytes: int
+    word_order: str
     data_alignment: str
     bit_alignment: str
     manual_bit_shift: int
@@ -103,6 +119,10 @@ class DigitalGainConfig(TypedDict):
     current_gain: int
     ae_feedback: int | None
     is_save: bool
+
+
+class DigitalGainConfigOptional(DigitalGainConfig, total=False):
+    exposure_correction_mode: str
 
 
 class WhiteBalanceConfig(TypedDict):
@@ -258,11 +278,25 @@ class DemosaicConfig(RequiredDemosaicConfig, total=False):
     algorithm: str
 
 
-class ToneMappingConfig(TypedDict):
+class RequiredToneMappingConfig(TypedDict):
     is_enable: bool
+
+
+class ToneMappingConfig(RequiredToneMappingConfig, total=False):
     tone_mapping_before_demosaic: bool
     tone_mapper: ToneMapperName
     is_save: bool
+    is_plot_curve: bool
+    operator: ToneMapperOperator
+    backend: ToneMapperBackend
+    placement: ToneMappingPlacement
+    normalization: ToneMappingNormalization
+    exposure_ev: float
+    domain_scale: float
+    normalize_output: bool
+    parameters: dict[str, float]
+    lut_domain: float
+    lut_size: int
 
 
 class ToneMappingParams(TypedDict, total=False):
@@ -321,7 +355,6 @@ RequiredPipelineConfig = TypedDict(
         "auto_exposure": AutoExposureConfig,
         "color_correction_matrix": ColorCorrectionMatrixConfig,
         "gamma_correction": GammaCorrectionConfig,
-        "hdr_durand": ToneMappingParams,
         "tone_mapping": ToneMappingConfig,
         "color_space_conversion": ColorSpaceConversionConfig,
         "color_saturation_enhancement": ColorSaturationEnhancementConfig,

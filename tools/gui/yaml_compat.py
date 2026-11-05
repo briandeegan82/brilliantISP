@@ -9,34 +9,7 @@ from typing import Any
 import yaml
 
 from util.config_merge import load_merged_yaml, pipeline_config_paths
-
-REQUIRED_CONFIG_KEYS = (
-    "platform",
-    "sensor_info",
-    "dead_pixel_correction",
-    "companding",
-    "digital_gain",
-    "lens_shading_correction",
-    "bayer_noise_reduction",
-    "black_level_correction",
-    "white_balance",
-    "auto_white_balance",
-    "demosaic",
-    "auto_exposure",
-    "color_correction_matrix",
-    "gamma_correction",
-    "hdr_durand",
-    "tone_mapping",
-    "color_space_conversion",
-    "color_saturation_enhancement",
-    "ldci",
-    "sharpen",
-    "2d_noise_reduction",
-    "rgb_conversion",
-    "scale",
-    "crop",
-    "yuv_conversion_format",
-)
+from util.config_schema import REQUIRED_CONFIG_KEYS, normalize_config
 
 # Document aliases that must never be written as YAML keys.
 FORBIDDEN_ALIASES = frozenset({"filt_window", "isEnable", "gamma_lut_8", "gamma_lut_10", "gamma_lut_12", "gamma_lut_14"})
@@ -51,9 +24,15 @@ def yaml_safe_value(obj: Any) -> Any:
 
 
 def load_preset_yaml(path: str | Path) -> dict[str, Any]:
-    """Load a camera overlay or standalone YAML the same way the pipeline does."""
+    """Load a camera overlay or standalone YAML the same way the pipeline does.
+
+    Applies ``normalize_config`` like ``BrilliantISP.load_config``: the
+    returned mapping is a normalized deep copy with no defaults inserted;
+    schema v2 is editable natively; unsupported versions raise ``ValueError``.
+    """
     paths = pipeline_config_paths(path)
-    return copy.deepcopy(load_merged_yaml(paths))
+    normalized, _notices = normalize_config(load_merged_yaml(paths))
+    return normalized
 
 
 def dump_config_yaml(config: dict[str, Any], path: str | Path) -> None:
@@ -84,17 +63,9 @@ def contains_forbidden_aliases(config: dict[str, Any]) -> list[str]:
 
 
 def merge_pipeline_feedback(dst: dict[str, Any], src: dict[str, Any]) -> None:
-    si_s, si_d = src.get("sensor_info"), dst.get("sensor_info")
-    if isinstance(si_s, dict) and isinstance(si_d, dict):
-        # Crop mutates pipeline sensor_info width/height to the ROI. Copying that
-        # back would make the next Process interpret the RAW at the cropped size.
-        crop_on = bool((dst.get("crop") or {}).get("is_enable"))
-        keys = ("bayer_pattern", "bit_depth", "hdr_bit_depth")
-        if not crop_on:
-            keys = ("width", "height", *keys)
-        for k in keys:
-            if k in si_s:
-                si_d[k] = copy.deepcopy(si_s[k])
+    """Copy only 3A feedback; effective sensor geometry/CFA never merges back."""
+    # Crop mutates pipeline sensor_info width/height to the ROI. Copying that
+    # back would make the next Process interpret the RAW at the cropped size.
     wb_s, wb_d = src.get("white_balance"), dst.get("white_balance")
     if isinstance(wb_s, dict) and isinstance(wb_d, dict):
         for k in ("r_gain", "b_gain"):

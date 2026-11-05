@@ -9,6 +9,7 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
 
+import math
 import numpy as np
 from util.debug_utils import get_debug_logger
 from tqdm import tqdm
@@ -144,3 +145,51 @@ class NLM:
 
         output_mean_filtered = ((summed_up_arrays) / patch_size**2).astype(array.dtype)
         return output_mean_filtered
+
+
+def apply_luma(
+    luma: np.ndarray,
+    *,
+    scale: float,
+    window_size: int,
+    patch_size: int,
+    strength: float,
+) -> np.ndarray:
+    """Native plane NLM: reflected search/patch windows, float64 weights.
+
+    ``window_size``/``patch_size`` must be positive odd integers;
+    ``strength`` is a finite nonnegative normalized distance scale.
+    ``strength=0`` is an exact self-weight identity (no 0/0). Checked
+    float32 restore in the same declared units.
+    """
+    from scipy.ndimage import uniform_filter
+    from util.luma import normalize_plane, restore_plane
+
+    for name, value in (("window_size", window_size), ("patch_size", patch_size)):
+        if isinstance(value, bool) or int(value) != value or int(value) <= 0 or int(value) % 2 == 0:
+            raise ValueError(f"{name} must be a positive odd integer, got {value!r}")
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) \
+            or not math.isfinite(float(strength)) or float(strength) < 0:
+        raise ValueError(f"strength must be a finite nonnegative number, got {strength!r}")
+    y = normalize_plane(luma, scale=scale)
+    h, w = y.shape
+    win, patch = int(window_size), int(patch_size)
+    radius = win // 2
+    s2 = float(strength) * float(strength)
+    ext = np.pad(y, radius, mode="reflect")
+    numerator = np.zeros((h, w), dtype=np.float64)
+    denominator = np.zeros((h, w), dtype=np.float64)
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            shifted = ext[radius + dy:radius + dy + h, radius + dx:radius + dx + w]
+            diff2 = (y - shifted) ** 2
+            distance = uniform_filter(diff2, patch, mode="mirror")
+            if s2 == 0:
+                weight = (distance == 0).astype(np.float64)
+            else:
+                with np.errstate(under="ignore", over="ignore"):
+                    weight = np.exp(-distance / s2)
+            numerator += weight * shifted
+            denominator += weight
+    out = numerator / denominator
+    return restore_plane(out, scale=scale)

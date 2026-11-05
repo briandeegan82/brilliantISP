@@ -27,10 +27,13 @@ class OECF:
         self.logger = get_debug_logger("OECF", config=self.platform)
 
     def apply_oecf(self):
-        """Execute OECF. Uses r_lut from config, or identity (passthrough) if missing."""
+        """Execute OECF. Direct declared-code LUT lookup; missing r_lut is identity."""
         raw = np.asarray(self.img)
+        if raw.ndim != 2 or raw.size == 0 or raw.dtype.kind not in "uif" or not np.all(np.isfinite(raw)):
+            raise ValueError("oecf input must be a nonempty finite real code plane")
 
-        # Identity LUT when r_lut not in config (passthrough)
+        # Identity LUT when r_lut not in config (passthrough); the identity
+        # preserves the INPUT range (PWC-enabled? hdr : raw bit depth).
         r_lut = self.parm_oecf.get("r_lut")
         if r_lut is None:
             bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
@@ -38,42 +41,44 @@ class OECF:
             return np.clip(raw, 0, max_val).astype(np.uint32 if max_val > 65535 else np.uint16, copy=False)
 
         # get config parm
-        bayer = self.sensor_info["bayer_pattern"]
-        bpp = self.sensor_info["bit_depth"]
+        bayer = str(self.sensor_info["bayer_pattern"]).lower()
+        layouts = {
+            "rggb": ("r_lut", "gr_lut", "gb_lut", "bl_lut"),
+            "bggr": ("bl_lut", "gb_lut", "gr_lut", "r_lut"),
+            "grbg": ("gr_lut", "r_lut", "bl_lut", "gb_lut"),
+            "gbrg": ("gb_lut", "bl_lut", "r_lut", "gr_lut"),
+        }
+        if bayer not in layouts:
+            raise ValueError(f"Unsupported oecf Bayer pattern {bayer!r}")
+        bits = self.parm_oecf.get("output_bit_depth", self.sensor_info["bit_depth"])
+        if isinstance(bits, (bool, np.bool_)) or not isinstance(bits, (int, float, np.integer, np.floating)) \
+                or not np.isfinite(bits) or not 1 <= bits <= 32 or int(bits) != bits:
+            raise ValueError("oecf.output_bit_depth must be an integer in 1..32")
+        out_bits = int(bits)
+        out_max = 2**out_bits - 1
+        if np.any(raw < 0) or np.any(raw != np.floor(raw)):
+            raise ValueError("oecf input codes must be nonnegative integers")
 
-        rd_lut = np.uint16(np.array(r_lut))
-        gr_lut = np.uint16(np.array(self.parm_oecf.get("gr_lut", r_lut)))
-        gb_lut = np.uint16(np.array(self.parm_oecf.get("gb_lut", r_lut)))
-        bl_lut = np.uint16(np.array(self.parm_oecf.get("bl_lut", r_lut)))
+        def _declared_lut(name: str, plane: np.ndarray) -> np.ndarray:
+            vals = np.asarray(self.parm_oecf.get(name, r_lut))
+            if vals.ndim != 1 or vals.size == 0 or vals.dtype.kind not in "uif":
+                raise ValueError(f"oecf {name} must be a nonempty 1-D LUT")
+            if not np.all(np.isfinite(vals)) or np.any(vals < 0) \
+                    or np.any(vals > out_max) or np.any(vals != np.floor(vals)):
+                raise ValueError(
+                    f"oecf {name} entries must be finite nonnegative integral <= {out_max}")
+            if int(plane.max()) >= vals.size:
+                raise ValueError(
+                    f"oecf {name} has no entry for declared input code")
+            return vals.astype(np.uint64)
 
-        raw_oecf = np.zeros(raw.shape)
-
-        if bayer == "rggb":
-
-            raw_oecf[0::2, 0::2] = rd_lut[raw[0::2, 0::2]]
-            raw_oecf[0::2, 1::2] = gr_lut[raw[0::2, 1::2]]
-            raw_oecf[1::2, 0::2] = gb_lut[raw[1::2, 0::2]]
-            raw_oecf[1::2, 1::2] = bl_lut[raw[1::2, 1::2]]
-
-        elif bayer == "bggr":
-            raw_oecf[0::2, 0::2] = bl_lut[raw[0::2, 0::2]]
-            raw_oecf[0::2, 1::2] = gb_lut[raw[0::2, 1::2]]
-            raw_oecf[1::2, 0::2] = gr_lut[raw[1::2, 0::2]]
-            raw_oecf[1::2, 1::2] = rd_lut[raw[1::2, 1::2]]
-
-        elif bayer == "grbg":
-            raw_oecf[0::2, 0::2] = gr_lut[raw[0::2, 0::2]]
-            raw_oecf[0::2, 1::2] = rd_lut[raw[0::2, 1::2]]
-            raw_oecf[1::2, 0::2] = bl_lut[raw[1::2, 0::2]]
-            raw_oecf[1::2, 1::2] = gb_lut[raw[1::2, 1::2]]
-
-        elif bayer == "gbrg":
-            raw_oecf[0::2, 0::2] = gb_lut[raw[0::2, 0::2]]
-            raw_oecf[0::2, 1::2] = bl_lut[raw[0::2, 1::2]]
-            raw_oecf[1::2, 0::2] = rd_lut[raw[1::2, 0::2]]
-            raw_oecf[1::2, 1::2] = gr_lut[raw[1::2, 1::2]]
-
-        raw_oecf = np.uint16(np.clip(raw_oecf, 0, (2**bpp) - 1))
+        raw_oecf = np.empty(raw.shape, dtype=np.uint32 if out_bits > 16 else np.uint16)
+        for site, name in enumerate(layouts[bayer]):
+            row, col = divmod(site, 2)
+            plane = raw[row::2, col::2]
+            if plane.size:
+                lut = _declared_lut(name, plane)
+                raw_oecf[row::2, col::2] = lut[plane.astype(np.intp)]
         return raw_oecf
 
     def save(self):

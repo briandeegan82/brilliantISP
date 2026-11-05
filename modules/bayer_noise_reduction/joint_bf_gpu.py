@@ -58,7 +58,7 @@ class JointBFGPU:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: np.ndarray,
         sensor_info: SensorInfo,
         parm_bnr: BayerNoiseReductionConfig,
         platform: PlatformConfig,

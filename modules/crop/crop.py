@@ -8,8 +8,17 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 
 import time
 import re
+from typing import cast
+
 import numpy as np
-from util.isp_types import CropConfig, PlatformConfig, RawBayerImage, SensorInfo
+from util.isp_types import (
+    BayerPattern,
+    CropConfig,
+    PlatformConfig,
+    RawBayerImage,
+    SensorInfo,
+)
+from util.raw_decode import shift_bayer_pattern
 from util.utils import save_output_array
 from util.debug_utils import get_debug_logger
 
@@ -35,7 +44,7 @@ class Crop:
     ) -> None:
         self.img = img
         self.sensor_info = sensor_info
-        self.old_size = (sensor_info["height"], sensor_info["width"])
+        self.old_size = (img.shape[0], img.shape[1])
         self.new_size = (parm_cro["new_height"], parm_cro["new_width"])
         self.x_start = parm_cro.get("crop_x_start", 0)
         self.y_start = parm_cro.get("crop_y_start", 0)
@@ -43,17 +52,23 @@ class Crop:
         self.is_debug = parm_cro["is_debug"]
         self.is_save = parm_cro["is_save"]
 
-        self.update_sensor_info(sensor_info)
         self.platform = platform
         self.logger = get_debug_logger("Crop", config=self.platform)
 
     def update_sensor_info(self, dictionary: SensorInfo) -> None:
-        """This function updates the variable stored in the dictionary sensor info."""
-        if self.enable:
-            if dictionary["height"] != self.new_size[0] or dictionary["width"] != self.new_size[1]:
-                dictionary["height"] = self.new_size[0]
-                dictionary["width"] = self.new_size[1]
-                dictionary["orig_size"] = str(self.img.T.shape)
+        """Update sensor geometry/CFA after a successful exact crop."""
+        if dictionary["height"] != self.new_size[0] or dictionary["width"] != self.new_size[1]:
+            dictionary["orig_size"] = str(self.old_size[::-1])
+        dictionary["height"] = self.new_size[0]
+        dictionary["width"] = self.new_size[1]
+        dictionary["bayer_pattern"] = cast(
+            BayerPattern,
+            shift_bayer_pattern(
+                str(dictionary.get("bayer_pattern", "rggb")),
+                int(self.x_start),
+                int(self.y_start),
+            ),
+        )
 
     def crop(self, img: RawBayerImage, rows_to_crop: int = 0, cols_to_crop: int = 0) -> RawBayerImage:
         """
@@ -80,36 +95,36 @@ class Crop:
                 )
         return img
 
-    def apply_cropping(self) -> RawBayerImage:
-        """Crop Image"""
-        if self.old_size == self.new_size:
-            self.logger.info("   - Output size is the same as input size.")
-            return self.img
+    def _validate(self) -> None:
+        def _integer(name: str, value: object) -> int:
+            if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+                raise ValueError(f"crop {name} must be an integer, got {value!r}")
+            return int(value)
 
-        if self.old_size[0] < self.new_size[0] or self.old_size[1] < self.new_size[1]:
-            self.logger.warning(f"   - Invalid output size {self.new_size[0]}x{self.new_size[1]}")
-            self.logger.warning("   - Make sure output size is smaller than input size!")
-            return self.img
+        h, w = _integer("new_height", self.new_size[0]), _integer("new_width", self.new_size[1])
+        x0, y0 = _integer("crop_x_start", self.x_start), _integer("crop_y_start", self.y_start)
+        if h <= 0 or w <= 0:
+            raise ValueError(f"crop output size must be positive, got {w}x{h}")
+        if x0 < 0 or y0 < 0:
+            raise ValueError(f"crop origins must be non-negative, got ({x0}, {y0})")
+        self.new_size = (h, w)
+        self.x_start, self.y_start = x0, y0
 
         # Validate crop region
-        if self.x_start + self.new_size[1] > self.old_size[1]:
-            self.logger.warning(f"   - Invalid crop_x_start ({self.x_start}): region extends beyond image width")
-            self.logger.warning(f"   - Adjusting to fit within image bounds")
-            self.x_start = max(0, self.old_size[1] - self.new_size[1])
+        img_h, img_w = self.img.shape[0], self.img.shape[1]
+        if y0 + h > img_h or x0 + w > img_w:
+            raise ValueError(
+                f"crop region ({x0}, {y0}) {w}x{h} exceeds input image "
+                f"{img_w}x{img_h}; no implicit adjustment is applied"
+            )
 
-        if self.y_start + self.new_size[0] > self.old_size[0]:
-            self.logger.warning(f"   - Invalid crop_y_start ({self.y_start}): region extends beyond image height")
-            self.logger.warning(f"   - Adjusting to fit within image bounds")
-            self.y_start = max(0, self.old_size[0] - self.new_size[0])
+    def apply_cropping(self) -> RawBayerImage:
+        """Crop Image using the exact requested origins and dimensions."""
+        self._validate()
 
-        # Ensure Bayer pattern alignment
-        if self.x_start % 2 != 0:
-            self.logger.warning(f"   - crop_x_start ({self.x_start}) is odd, adjusting to even for Bayer alignment")
-            self.x_start = (self.x_start // 2) * 2
-
-        if self.y_start % 2 != 0:
-            self.logger.warning(f"   - crop_y_start ({self.y_start}) is odd, adjusting to even for Bayer alignment")
-            self.y_start = (self.y_start // 2) * 2
+        if self.old_size == self.new_size and self.x_start == 0 and self.y_start == 0:
+            self.logger.info("   - Output size is the same as input size.")
+            return self.img
 
         # Extract the region from (y_start, x_start) with size (new_height, new_width)
         cropped_img = self.img[self.y_start : self.y_start + self.new_size[0], self.x_start : self.x_start + self.new_size[1]]
@@ -154,6 +169,8 @@ class Crop:
             cropped_img = self.apply_cropping()
             self.logger.info(f"  Execution time: {time.time() - start:.3f}s")
             self.img = cropped_img
+            # Ensure Bayer pattern alignment
+            self.update_sensor_info(self.sensor_info)
 
         # save the output of crop module
         self.save("Out_crop_")

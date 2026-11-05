@@ -13,6 +13,7 @@ Code / Paper  Reference:
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
+import os
 import time
 import re
 import numpy as np
@@ -30,10 +31,13 @@ class YUVConvFormat:
         platform: PlatformConfig,
         sensor_info: SensorInfo,
         parm_yuv: YUVConversionFormatConfig,
+        *,
+        write_output: bool = True,
     ) -> None:  # parm_csc):
         self.img = img
         self.shape = img.shape
         self.enable = parm_yuv["is_enable"]
+        self.write_output = write_output
         # self.is_csc_enable = parm_csc['is_enable']
         self.sensor_info = sensor_info
         self.param_yuv = parm_yuv
@@ -60,10 +64,12 @@ class YUVConvFormat:
             v_0 = self.img[:, :, 2].reshape(-1, 1)
             yuv = np.concatenate([y_0, u_0, v_0], axis=1)
 
-        out_path = "./out_frames/out_" + self.in_file + ".yuv"
-
-        with open(out_path, "wb") as raw_wb:
-            yuv.flatten().tofile(raw_wb)
+        if self.write_output:
+            out_dir = self.platform.get("final_output_dir", "./out_frames")
+            out_path = os.path.join(out_dir, "out_" + self.in_file + ".yuv")
+            os.makedirs(out_dir, exist_ok=True)
+            with open(out_path, "wb") as raw_wb:
+                yuv.flatten().tofile(raw_wb)
 
         return yuv.flatten()
 

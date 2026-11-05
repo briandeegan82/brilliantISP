@@ -10,7 +10,7 @@ import logging
 import numpy as np
 from scipy.signal import correlate2d
 
-from util.isp_types import DemosaicMasks, RawBayerImage
+from util.isp_types import BayerImage, DemosaicMasks, RawBayerImage
 
 # Try to import CuPy, fall back to CPU if not available
 try:
@@ -27,7 +27,7 @@ class MalvarCuPy:
     CuPy-accelerated CFA interpolation or Demosaicing
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = raw_in
         self.masks = masks
         self.use_gpu = CUPY_AVAILABLE and self._should_use_gpu()

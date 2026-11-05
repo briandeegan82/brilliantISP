@@ -30,7 +30,7 @@ class DynamicDPC:
     ) -> None:
         self.img = img
         self.sensor_info = sensor_info
-        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
+        self.bpp = self.sensor_info.get("bit_depth", 16)
         self.threshold = parm_dpc["dp_threshold"]
         self.is_debug = parm_dpc["is_debug"]
         self.logger = get_debug_logger("DeadPixelCorrection", config=platform or {})
@@ -40,8 +40,13 @@ class DynamicDPC:
         array opertaions."""
 
         height, width = self.sensor_info["height"], self.sensor_info["width"]
+        f = np.asarray(self.img, dtype=np.float64)
+        if f.shape != (height, width):
+            raise ValueError(
+                f"image shape {f.shape} does not match declared {height}x{width}"
+            )
 
-        dpc_img = np.empty((height, width), np.float32)
+        dpc_img = np.empty((height, width), np.float64)
 
         # Get 3x3 neighbourhood of each pixel.
         # 5x5 matrix is defined as this window is extarcted from raw image.
@@ -57,13 +62,13 @@ class DynamicDPC:
 
         # The maximum and minimum filters automatically pad the input image internally,
         # eliminating the need for manual padding.
-        max_value = maximum_filter(self.img, footprint=window, mode="mirror")
-        min_value = minimum_filter(self.img, footprint=window, mode="mirror")
+        max_value = maximum_filter(f, footprint=window, mode="mirror")
+        min_value = minimum_filter(f, footprint=window, mode="mirror")
 
         # Condition 1: center_pixel needs to be corrected if it lies outside the
         # interval(min_value,max) of the 3x3 neighbourhood.
         # min_value < center_pixel < max_value--> no correction needed
-        mask_cond1 = (np.where((min_value > self.img) | (self.img > max_value), True, False)).astype("int32")
+        mask_cond1 = (np.where((min_value > f) | (f > max_value), True, False)).astype("int32")
 
         # Condition 2:
         # center_pixel is corrected only if the difference of center_pixel and every
@@ -149,14 +154,14 @@ class DynamicDPC:
         # The correlate function automatically pads the input image internally,
         # eliminating the need for manual padding.
 
-        diff_top_left = np.abs(correlate(self.img, ker_top_left, mode="mirror"))
-        diff_top_mid = np.abs(correlate(self.img, ker_top_mid, mode="mirror"))
-        diff_top_right = np.abs(correlate(self.img, ker_top_right, mode="mirror"))
-        diff_mid_left = np.abs(correlate(self.img, ker_mid_left, mode="mirror"))
-        diff_mid_right = np.abs(correlate(self.img, ker_mid_right, mode="mirror"))
-        diff_bottom_left = np.abs(correlate(self.img, ker_bottom_left, mode="mirror"))
-        diff_bottom_mid = np.abs(correlate(self.img, ker_bottom_mid, mode="mirror"))
-        diff_bottom_right = np.abs(correlate(self.img, ker_bottom_right, mode="mirror"))
+        diff_top_left = np.abs(correlate(f, ker_top_left, mode="mirror"))
+        diff_top_mid = np.abs(correlate(f, ker_top_mid, mode="mirror"))
+        diff_top_right = np.abs(correlate(f, ker_top_right, mode="mirror"))
+        diff_mid_left = np.abs(correlate(f, ker_mid_left, mode="mirror"))
+        diff_mid_right = np.abs(correlate(f, ker_mid_right, mode="mirror"))
+        diff_bottom_left = np.abs(correlate(f, ker_bottom_left, mode="mirror"))
+        diff_bottom_mid = np.abs(correlate(f, ker_bottom_mid, mode="mirror"))
+        diff_bottom_right = np.abs(correlate(f, ker_bottom_right, mode="mirror"))
 
         del (
             ker_top_left,
@@ -225,10 +230,10 @@ class DynamicDPC:
         )
 
         # Convole the kernels to compute respective gradients
-        vertical_grad = np.abs(correlate(self.img, ker_v, mode="mirror"))
-        horizontal_grad = np.abs(correlate(self.img, ker_h, mode="mirror"))
-        left_diagonal_grad = np.abs(correlate(self.img, ker_left_dia, mode="mirror"))
-        right_diagonal_grad = np.abs(correlate(self.img, ker_right_dia, mode="mirror"))
+        vertical_grad = np.abs(correlate(f, ker_v, mode="mirror"))
+        horizontal_grad = np.abs(correlate(f, ker_h, mode="mirror"))
+        left_diagonal_grad = np.abs(correlate(f, ker_left_dia, mode="mirror"))
+        right_diagonal_grad = np.abs(correlate(f, ker_right_dia, mode="mirror"))
 
         # Delete temporary variables
         del ker_v, ker_h, ker_left_dia, ker_right_dia
@@ -277,41 +282,38 @@ class DynamicDPC:
         )
 
         # Convolve kernels to compute mean for each direction
-        mean_v = correlate(self.img, ker_mean_v, mode="mirror")
-        mean_h = correlate(self.img, ker_mean_h, mode="mirror")
-        mean_ldia = correlate(self.img, ker_mean_ldia, mode="mirror")
-        mean_rdia = correlate(self.img, ker_mean_rdia, mode="mirror")
+        mean_v = correlate(f, ker_mean_v, mode="mirror")
+        mean_h = correlate(f, ker_mean_h, mode="mirror")
+        mean_ldia = correlate(f, ker_mean_ldia, mode="mirror")
+        mean_rdia = correlate(f, ker_mean_rdia, mode="mirror")
 
         del ker_mean_v, ker_mean_h, ker_mean_ldia, ker_mean_rdia
 
         # Corrected image has the corrected pixel values in place of a detected dead pixel
         # and 0 elsewhere
-        corrected_img = np.zeros(self.img.shape)
+        corrected_img = np.zeros(f.shape)
+        applied = np.zeros(f.shape, bool)
 
-        # compile all pixels that can be corrected using the neighbors in the same direction
-        corrected_v = np.where(min_grad == vertical_grad, mean_v, 0) * detection_mask
-        corrected_h = np.where(min_grad == horizontal_grad, mean_h, 0) * detection_mask
-        corrected_ldia = np.where(min_grad == left_diagonal_grad, mean_ldia, 0) * detection_mask
-        corrected_rdia = np.where(min_grad == right_diagonal_grad, mean_rdia, 0) * detection_mask
-
-        # In most cases, the corrected masks created above will not overlap, as each pixel will
-        # have a unique gradient direction. However, in rare cases where two or more directions
-        # have the same gradient magnitude, it is necessary to specify which neighboring pixels
-        # should be used to calculate the corrected value. To resolve this issue, the next block
-        # of code ensures that each pixel is only corrected once, giving priority to the vertical
-        # direction, then horizontal, left diagonal, and finally the right diagonal.
-        corrected_img = corrected_img + corrected_v
-        corrected_img = np.where(corrected_img == 0, corrected_h, corrected_img)
-        corrected_img = np.where(corrected_img == 0, corrected_ldia, corrected_img)
-        corrected_img = np.where(corrected_img == 0, corrected_rdia, corrected_img)
+        # In most cases only one directional mean applies per pixel. Where two or more
+        # directions share the same gradient magnitude, priority is vertical, then
+        # horizontal, left diagonal, and finally the right diagonal; the explicit
+        # selection below replaces the earlier zero-as-unset sentinel.
+        for grad, mean in (
+            (vertical_grad, mean_v),
+            (horizontal_grad, mean_h),
+            (left_diagonal_grad, mean_ldia),
+            (right_diagonal_grad, mean_rdia),
+        ):
+            selected = detection_mask.astype(bool) & ~applied & (min_grad == grad)
+            corrected_img = np.where(selected, mean, corrected_img)
+            applied |= selected
 
         del mean_h, mean_v, mean_ldia, mean_rdia
-        del corrected_v, corrected_h, corrected_ldia, corrected_rdia
 
         # Insert correct value of the detected dead pixels
-        dpc_img = np.where(detection_mask, corrected_img, self.img)
+        dpc_img = np.where(applied, corrected_img, f)
 
-        # Remove padding, use uint32 for HDR (bpp > 16)
+        # Clip/cast in float64 to the declared sensor bit depth
         max_val = (2**self.bpp) - 1
         self.img = np.clip(dpc_img, 0, max_val)
         self.img = self.img.astype(np.uint32 if self.bpp > 16 else np.uint16)
@@ -320,3 +322,48 @@ class DynamicDPC:
             self.logger.info(f"   - Number of corrected pixels = {np.count_nonzero(detection_mask)}")
             self.logger.info(f"   - Threshold = {self.threshold}")
         return cast(RawBayerImage, self.img)
+
+
+_PAIR_OFFSETS = (
+    ((-2, 0), (2, 0)),
+    ((0, -2), (0, 2)),
+    ((-2, -2), (2, 2)),
+    ((-2, 2), (2, -2)),
+)
+
+
+def _same_color_prep(
+    img: np.ndarray, threshold: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+           np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Detection mask, four directional gradients and four directional means.
+
+    Signed float64 arithmetic (unsigned differences cannot wrap); neighbors
+    are same-CFA-color samples at +/-2 offsets on a reflect-padded copy
+    (scipy ``mirror`` boundary semantics). Accumulates over reflected
+    neighbor views rather than materializing a stacked copy.
+    """
+    f = np.asarray(img, dtype=np.float64)
+    ext = np.pad(f, 2, mode="reflect")
+    h, w = f.shape
+    lo = np.full((h, w), np.inf)
+    hi = np.full((h, w), -np.inf)
+    mask = np.ones((h, w), bool)
+    grads: list[np.ndarray] = []
+    means: list[np.ndarray] = []
+    for (a_dy, a_dx), (b_dy, b_dx) in _PAIR_OFFSETS:
+        for dy, dx in ((a_dy, a_dx), (b_dy, b_dx)):
+            view = ext[2 + dy:2 + dy + h, 2 + dx:2 + dx + w]
+            np.minimum(lo, view, out=lo)
+            np.maximum(hi, view, out=hi)
+            mask &= np.abs(f - view) > threshold
+        a = ext[2 + a_dy:2 + a_dy + h, 2 + a_dx:2 + a_dx + w]
+        b = ext[2 + b_dy:2 + b_dy + h, 2 + b_dx:2 + b_dx + w]
+        grads.append(np.abs(2.0 * f - a - b))
+        means.append((a + b) / 2.0)
+    mask &= (f < lo) | (f > hi)
+    return (
+        mask,
+        grads[0], grads[1], grads[2], grads[3],
+        means[0], means[1], means[2], means[3],
+    )

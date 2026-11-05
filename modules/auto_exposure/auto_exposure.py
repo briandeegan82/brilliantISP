@@ -9,6 +9,7 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 
 import time
 import numpy as np
+import math
 from util.debug_utils import get_debug_logger
 from util.isp_types import AutoExposureConfig, SensorInfo
 
@@ -18,7 +19,11 @@ class AutoExposure:
     Auto Exposure Module
     """
 
-    def __init__(self, img: np.ndarray, sensor_info: SensorInfo, parm_ae: AutoExposureConfig) -> None:
+    def __init__(self, img: np.ndarray, sensor_info: SensorInfo, parm_ae: AutoExposureConfig,
+                 *, meter_domain: str = "legacy_codes") -> None:
+        if meter_domain not in ("legacy_codes", "scene_linear_rgb"):
+            raise ValueError(f"unknown meter_domain {meter_domain!r}")
+        self.meter_domain = meter_domain
         self.img = img
         self.enable = parm_ae["is_enable"]
         self.is_debug = parm_ae["is_debug"]
@@ -44,6 +49,7 @@ class AutoExposure:
         # Filled in determine_exposure() for direct gain mapping
         self.last_meter_average: float | None = None
         self.last_max_channel_meter: int = 0
+        self.sample_count: int = 0
 
     def _meter_shift(self) -> int:
         """Right-shift count to bring CCM RGB into an ~8-bit band for AE stats."""
@@ -64,10 +70,17 @@ class AutoExposure:
             return c * float(max_ch)
         return c
 
-    def get_exposure_feedback(self) -> int:
+    def get_exposure_feedback(self) -> int | None:
         """
         Downscale post-CCM RGB to an ~8-bit range, then compute skewness feedback.
+
+        With meter_domain 'scene_linear_rgb' the input is normalized
+        float HWC3 in nominal 0..1 units; metering is a direct 709 luma
+        average (no integer downshift, no upper clip). Empty or
+        zero-signal frames yield no feedback (None) and no gain change.
         """
+        if self.meter_domain == "scene_linear_rgb":
+            return self._native_exposure_feedback()
         shift = self._meter_shift()
         self.img = self.img.astype(np.uint32, copy=False) >> shift
 
@@ -135,17 +148,90 @@ class AutoExposure:
         # skewness, i.e. (m_3 / m_2**(3/2)) * g_1
         # where m_2 is 2nd moment (variance) and m_3 is third moment skewness
 
+        # Centered on the CONFIGURED center (not the sample mean). Scale
+        # deltas by max|delta| first so HDR/absolute centers do not overflow.
         img_size = img.size
-        m_2 = np.sum(np.power(img, 2)) / img_size
-        m_3 = np.sum(np.power(img, 3)) / img_size
-
-        g_1 = np.sqrt(img_size * (img_size - 1)) / (img_size - 2)
-        skewness = np.nan_to_num((m_3 / abs(m_2) ** (3 / 2)) * g_1)
+        if img_size <= 0:
+            return np.float64(0.0)
+        scale = float(np.max(np.abs(img)))
+        if img_size <= 2:
+            g_1 = 1.0
+        else:
+            g_1 = np.sqrt(img_size * (img_size - 1)) / (img_size - 2)
+        if scale == 0:
+            skewness = 0.0
+        else:
+            u = img / scale
+            m_2 = np.mean(u * u)
+            m_3 = np.mean(u * u * u)
+            if m_2 == 0:
+                skewness = 0.0
+            else:
+                skewness = (m_3 / abs(m_2) ** 1.5) * g_1
 
         if self.is_debug:
             self.logger.info(f"AE - Histogram Skewness = {skewness}")
 
-        return skewness
+        return np.float64(skewness)
+
+    def _native_exposure_feedback(self) -> int | None:
+        """Skewness feedback on normalized scene-linear RGB (no code downshift)."""
+        from util.color import luminance as _luma
+
+        src = np.asarray(self.img)
+        if src.ndim != 3 or src.shape[-1] != 3 or src.dtype.kind not in "fiu" or not np.all(np.isfinite(src)):
+            raise ValueError("native AE input must be finite real HWC3 scene-linear RGB")
+        center = float(self.center_illuminance)
+        target = self.param_ae.get("target_luminance")
+        upper = float(self.histogram_skewness_range)
+        if not math.isfinite(center) or center < 0:
+            raise ValueError("native AE center must be finite nonnegative")
+        if target is not None and (not math.isfinite(float(target)) or float(target) < 0):
+            raise ValueError("native AE target must be finite nonnegative")
+        if not math.isfinite(upper) or upper < 0:
+            raise ValueError("histogram_skewness must be finite nonnegative")
+        self.last_max_channel_meter = 1
+        if src.ndim == 3 and src.size == 0:
+            self.last_meter_average = None
+            self.sample_count = 0
+            return None
+        if src.ndim != 3 or src.shape[-1] != 3 or not np.all(np.isfinite(src)):
+            raise ValueError(
+                f"native AE input must be finite HWC3 scene-linear RGB, got {src.shape}"
+            )
+        y = np.maximum(_luma(src.astype(np.float64), dtype=np.float64), 0.0)
+        mean = float(np.mean(y))
+        self.sample_count = int(y.size)
+        self.last_max_channel_meter = 1
+        if self.sample_count == 0:
+            self.last_meter_average = None
+            return None
+        self.last_meter_average = mean
+        if mean <= 0:
+            return None
+        skew = self.get_luminance_histogram_skewness(y, center)
+        if skew < -upper:
+            return -1
+        if skew > upper:
+            return 1
+        return 0
+
+    def suggest_direct_gain_index(self, current_gain_index: int, gain_array: list[float]) -> int:
+        """Nearest declared-gain index toward target; native target is absolute."""
+        if self.last_meter_average is None or not gain_array:
+            return current_gain_index
+        if self.meter_domain == "scene_linear_rgb":
+            if self.last_meter_average <= 0:
+                return current_gain_index
+            raw = self.param_ae.get("target_luminance")
+            target = 0.5 if raw is None else float(raw)
+            arr = np.asarray(gain_array, dtype=np.float64)
+            ratio = target / self.last_meter_average
+            gi = int(np.clip(current_gain_index, 0, len(gain_array) - 1))
+            desired = float(np.clip(float(gain_array[gi]) * ratio,
+                                    float(arr.min()), float(arr.max())))
+            return int(np.argmin(np.abs(arr - desired)))
+        return self._suggest_legacy_impl(current_gain_index, gain_array)
 
     def _absolute_target_luminance(self) -> float:
         """Target avg luma in the same units as last_meter_average (post meter downshift)."""
@@ -158,9 +244,8 @@ class AutoExposure:
             return c * max_ch
         return c
 
-    def suggest_direct_gain_index(self, current_gain_index: int, gain_array: list[float]) -> int:
-        """
-        Pick gain_array index closest to the multiplier that would move
+    def _suggest_legacy_impl(self, current_gain_index: int, gain_array: list[float]) -> int:
+        """Pick gain_array index closest to the multiplier that would move
         last_meter_average toward target_luminance in one shot (first-order).
         """
         if self.last_meter_average is None or not gain_array:

@@ -9,7 +9,7 @@ Author: Brian Deegan (via AI)
 import numpy as np
 from scipy.ndimage import convolve
 
-from util.isp_types import DemosaicMasks, RawBayerImage
+from util.isp_types import BayerImage, DemosaicMasks
 
 
 class VNGDemosaic:
@@ -24,7 +24,7 @@ class VNGDemosaic:
     This produces better edge preservation than bilinear or Malvar methods.
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]
         self.height, self.width = self.img.shape
@@ -200,7 +200,7 @@ class VNGDemosaicOptimized:
     Faster than the basic VNG but still maintains edge-directed interpolation.
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]
 

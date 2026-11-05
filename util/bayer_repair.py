@@ -7,9 +7,12 @@ import numpy as np
 from util.isp_types import BayerPattern
 
 
-def green_zero_fraction(raw: np.ndarray, bayer_pattern: BayerPattern) -> float:
-    """Fraction of CFA green sites that are <= 0."""
+def green_zero_fraction(raw: np.ndarray, bayer_pattern: BayerPattern,
+                        *, zero_thresh: float = 0.0) -> float:
+    """Fraction of ORIGINAL CFA green sites that are <= zero_thresh."""
     pat = str(bayer_pattern).strip().lower()
+    if pat not in ("rggb", "bggr", "grbg", "gbrg"):
+        raise ValueError(f"Unsupported bayer_pattern: {bayer_pattern}")
     img = raw
     if pat == "rggb":
         g = np.concatenate([img[0::2, 1::2].ravel(), img[1::2, 0::2].ravel()])
@@ -21,7 +24,9 @@ def green_zero_fraction(raw: np.ndarray, bayer_pattern: BayerPattern) -> float:
         g = np.concatenate([img[0::2, 0::2].ravel(), img[1::2, 1::2].ravel()])
     else:
         raise ValueError(f"Unsupported bayer_pattern: {bayer_pattern}")
-    return float((g <= 0).mean())
+    if g.size == 0:
+        return 0.0
+    return float((g <= zero_thresh).mean())
 
 
 def repair_zero_green_cfa(
@@ -40,7 +45,16 @@ def repair_zero_green_cfa(
     Returns (repaired_raw, fraction_of_green_sites_filled).
     """
     pat = str(bayer_pattern).strip().lower()
-    out = raw.astype(np.float64, copy=True)
+    if pat not in ("rggb", "bggr", "grbg", "gbrg"):
+        raise ValueError(f"Unsupported bayer_pattern: {bayer_pattern}")
+    h, w = raw.shape
+    if h < 2 or w < 2:
+        return np.asarray(raw).astype(raw.dtype, copy=True), 0.0
+    ph, pw = h + (h % 2), w + (w % 2)
+    work = raw
+    if (ph, pw) != (h, w):
+        work = np.pad(raw, ((0, ph - h), (0, pw - w)), "reflect")
+    out = np.asarray(work).astype(np.float64, copy=True)
 
     if pat == "rggb":
         filled = _fill_rggb_greens(out, zero_thresh)
@@ -54,7 +68,10 @@ def repair_zero_green_cfa(
     else:
         raise ValueError(f"Unsupported bayer_pattern: {bayer_pattern}")
 
-    return np.clip(out, 0, None).astype(raw.dtype, copy=False), filled
+    cropped = out[:h, :w] if (ph, pw) != (h, w) else out
+    return np.clip(cropped, 0, None).astype(raw.dtype, copy=False), green_zero_fraction(
+        raw, bayer_pattern, zero_thresh=zero_thresh
+    )
 
 
 def _fill_rggb_greens(out: np.ndarray, zero_thresh: float) -> float:

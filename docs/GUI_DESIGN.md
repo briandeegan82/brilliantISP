@@ -1,8 +1,226 @@
-# BrilliantISP Calibration GUI Design
+# BrilliantISP Calibration Workspace
 
-This document specifies a two-window calibration GUI for opening a RAW (or convertible) image, defining its format, tuning the ISP, and processing through the existing BrilliantISP pipeline.
+## Current implementation and launch policy
 
-It is a **design specification**. It does not implement the GUI. The current live tuner is [`tools/isp_tuning_gui.py`](../tools/isp_tuning_gui.py) (single window). This document is the target UX: **Image Format** + **ISP Configuration**, with a project-local session of YAML + RAW.
+The integrated Tk workspace is implemented in [`tools/gui/app.py`](../tools/gui/app.py).
+It uses the native processing API, not a second ISP. The legacy calibration
+application remains the default during the transition. Opt in explicitly:
+
+```bash
+venv/bin/python tools/isp_calibration_gui.py --workspace --config config/SVS_cam.yml
+```
+
+Add `--raw "path/to/frame.raw"` to import a source on startup, or use **Import**.
+`--no-recover` suppresses recovery of a previously saved workspace. Without
+`--workspace`, the launcher retains the legacy application and its existing
+arguments. Importing the launcher or requesting `--help` does not initialize Tk,
+NumPy, Matplotlib, OpenCV, or the processing engine.
+
+Linux desktop is the primary target. Tk, Matplotlib's Tk backend, and a usable
+display are required for desktop tests. Headless model, worker, artifact,
+analysis, and session tests do not require a display. No general cross-platform
+or real-time guarantee is made.
+
+## Workspace and editing
+
+- **Format** contains sensor/storage controls, the declared CFA tile, and
+  computed format readouts. The CFA tile is a declaration, not a detector.
+- **Pipeline** shows execution stages, their domains, enable/invalid states,
+  modified markers, and recorded stage timings. Pre-demosaic mapping has a
+  separate render demosaic/CCM branch. `noise_reduction_2d` is the execution
+  identifier; its editable YAML section is `2d_noise_reduction`.
+- **Batch** queues frozen source/configuration snapshots for serial processing.
+  Selecting a completed result opens that result, not the current draft's output.
+- The center preview provides fit, 1:1, wheel zoom, middle/right-button pan,
+  manual ROI selection, native pixel readout, and A/B controls.
+- The right inspector contains **Parameters**, **Analysis**, **Feedback**, and
+  **Jobs**. A selected block's **Documentation** action opens its block page,
+  falling back to this document where block documentation is not yet available.
+
+Edits update the draft immediately. Invalid numeric or structured values remain
+visible and block processing, session saving, and export until repaired.
+Typing is grouped for undo; parameter/block resets and explicit configuration
+replacement are undoable. Opening a block does not materialize missing defaults
+in the preset. Native-v2 tone-operator changes apply the shared operator/backend
+defaults as one edit. Legacy operator parameter sections remain accessible under
+**Advanced**.
+
+The native engine owns transfer encoding. Legacy gamma, RGB/YUV conversion, and
+color-space-conversion sections shown under Advanced are migration settings, not
+additional native stages. See [configuration](CONFIGURATION.md),
+[RAW input](RAW_INPUT.md), and [tone mapping](blocks/tone_mapping.md) for the
+processing contracts. Session saving does not overwrite the source preset.
+Native-v2 migration is an explicit, confirmed menu action.
+
+## Background work and result identity
+
+`WorkspaceModel` owns draft/history/source state; `WorkspaceController` schedules
+work; `WorkerManager` owns a persistent spawn worker. Tk never executes the ISP.
+Requests carry request/session/generation/revision/source identities. Invalidated
+processing results cannot replace a current result after edits or session/source
+changes. Cancel, stop, restart, and close use bounded worker teardown.
+
+Imported bytes are staged without renaming a PGM/TIFF container to RAW. The
+original file is not modified. Processing verifies the staged file's SHA-256
+and stable file identity before and after computation, before publishing native
+artifacts. A changed staged source must be reimported; retaining an old
+fingerprint must not make changed frames appear registered.
+
+Each completed processing job has a frozen result directory with
+`result.json`, `native.npy`, `preview.npy`, and any requested captures. The
+manifest records configuration, feedback, native metadata, warnings, migration
+report, stage timings, and request identity. Manual capture selection applies to
+the next processing request; it does not imply every intermediate is retained.
+Preview jobs override preset save/debug/plot flags to avoid uncontrolled output.
+The GUI does not mutate these original arrays; session artifacts are not
+tamper-proof archives.
+
+The displayed artifact is a frozen result, not a live rendering of every draft
+keystroke. A/B pins remain frozen while newer work completes. View-only renders
+operate on pinned artifact directories and their exact descriptors, rather than
+rerunning the draft's ISP. They are latest-coalesced, and late or mismatched
+render results do not replace a subsequently selected view.
+
+## Comparisons and analysis: units matter
+
+**Current**, **A**, and **B** show individual snapshots. **Side by side** permits
+independent views of different sources, but links navigation and enables paired
+numeric analysis only for registered frames. **Wipe** and **Difference** require
+matching source fingerprint, decode/crop/scale geometry, shape, and declared
+comparison domain. Identity errors fail closed rather than assuming alignment.
+
+Wipe and amplified difference images are derived display-code visualizations.
+They do not modify native arrays and are not perceptual Delta-E, scene dynamic
+range, or image-quality scores. A zero difference of two identical snapshots
+does not establish camera or algorithm quality.
+
+The inspector distinguishes:
+
+- stretched CFA **RAW visualization**, which is not a processed RGB image;
+- **sRGB8 display-code** statistics, not scene-linear luminance measurements;
+- **native/captured** values in their declared units, including headroom and
+  below/above nominal counts.
+
+RAW analysis reads native sensor-code values, not its false-color visualization.
+Pixel picking reads the full native frame, not a resized canvas. Packed 4:2:2
+data is inspected in logical pixel coordinates with shared chroma identified.
+In wipe/difference mode the picker reports the original A and B values.
+
+ROIs use half-open native image bounds. Side-by-side ROI selection is scoped to
+the selected pane. If a selected capture has a different grid from the displayed
+output, its ROI is cleared and full-frame analysis is explicitly requested;
+coordinates are not guessed or rescaled. Native comparisons also require
+compatible numeric domains. Disable **Compare with reference** to inspect an
+individual stage when paired analysis is incompatible.
+
+The tone curve is the shared native mapper/output transfer sampled on a unit
+ramp. It is not a measured response of the captured frame. In particular,
+frame/local-dependent Durand processing cannot be characterized by that plot
+alone.
+
+Feedback is read-only until explicitly applied. **Use measured AWB manually**
+accepts valid estimated gains and disables automatic WB. **Freeze applied gain**
+uses the gain index actually used for that result, not a suggested next index,
+and disables AE/automatic gain selection. Both are single undoable edits and
+reject feedback from a different draft/session/source context.
+
+## Save, recover, export, and close
+
+Workspaces live under `tmp/gui_session/<session-id>/`. `workspace.json` is an
+atomic bundle containing configuration, preset/saved snapshots, portable source
+records, A/B/current artifact references, and UI state. Source and artifact paths
+must remain within the session; traversal and unsafe paths are rejected.
+Move the complete session directory, not only `workspace.json`, to retain data.
+Missing artifacts are reported rather than fabricated or silently regenerated.
+
+Saving preserves comparison selection, viewport, window size, and pane
+positions. Pane restoration waits for the actual paned widget to be mapped;
+opening a saved workspace must not collapse the center preview or reset a
+later user drag. Closing a dirty workspace offers Save/Discard/Cancel. A failed
+save or Cancel leaves the workspace alive.
+
+**Export** writes the selected processed artifact using its frozen native
+output specification and metadata, even if the draft or latest processing
+result has changed. In paired/derived modes choose original A or B. A stretched
+RAW visualization or amplified difference is not silently exported as native
+output. A valid draft is still required before export; repairing or undoing an
+invalid edit does not change the selected result's frozen output specification.
+Preset YAML export is separate.
+
+## Verification evidence and measured limits
+
+Synthetic fixtures and GUI tests are under [`tests/gui`](../tests/gui).
+Important coverage includes real Tk construction, PGM import/process/export,
+invalid draft retention, one-edit undo, source/session rebinding, worker
+cancellation/reaping, native parity, stale-result rejection, real comparison
+rendering, ROI/analysis/picking, and saved workspace restoration.
+
+Local acceptance artifacts are in `tmp/modernization_m0/m6_hmi/`:
+
+- `acceptance.json`: final evidence index, frozen-source verification, protected
+  file check, test/type-check scope, and explicit remaining transition gates.
+- `native_worker_parity.json`: both private real scenes match frozen M5 native
+  and preview hashes, captured F32 stages, feedback, and metadata. The expected
+  provenance difference is the session-owned staged source path. All 102
+  protected files remained unchanged.
+- `workspace_visible_1366.png`: an actual processed synthetic frame with a
+  visible center pane. Desktop width assertions cover 1366×768 and 1920×1080.
+- `workspace_visible_1920.png` and `workspace_visible_1920_hidpi.png`:
+  additional processed synthetic-frame captures. The latter changes software
+  Tk scaling, but the effective font sizes did not change; it is not physical
+  high-DPI acceptance.
+- `phase2d_full_tests.txt`: 1,426 tests passed with five existing kernel/fallback
+  warnings. A subsequent 49-test focused run covered the final export guard,
+  launcher selection, cache tests, and legacy state helpers; the final 30-test
+  legacy-helper run and narrowed type check passed after the tuple-type repair.
+  The earlier broad type check's three errors were resolved by these focused
+  checks, without disabling diagnostics or weakening assertions.
+- `heartbeat_final_svs_1366/final_report.json` and
+  `heartbeat_final_ad_1366/final_report.json`: one
+  real-mainloop run per scene, with a 20 ms UI heartbeat during import,
+  processing, navigation, ROI analysis, pinning, and derived rendering. Both
+  runs record the same 38 source-file digests, verified unchanged during each
+  run. Earlier `heartbeat_svs_1366`/`heartbeat_ad_1366` reports are retained as
+  development evidence, not substituted for the final candidate.
+
+| Scene | Heartbeat samples | Processing-phase p95 delay | Overall p95 delay | Largest observed delay |
+|---|---:|---:|---:|---:|
+| SVS, 1920×1536 | 511 | 0.95 ms | 12.72 ms | 390.56 ms |
+| AD, 3840×2185 | 969 | 0.91 ms | 1.12 ms | 363.20 ms |
+
+Delay means `max(consecutive heartbeat interval − 20 ms, 0)`; percentiles use
+linear interpolation. These are UI scheduler delays, not worker IPC latency,
+input-device latency, or full-frame processing times. Both runs met the planned
+processing-phase p95 target of 100 ms and produced native hashes identical to
+M5. Overall percentiles are weighted by the number of samples in each phase;
+the longer AD processing phase does not prove its display interactions faster.
+
+The largest delays occurred during initial settling. Switching the AD
+side-by-side view also produced a 240.23 ms delay, and wipe presentation produced
+114.04 ms. Small phase sample counts do not establish tail guarantees. Large
+frame presentation can still hitch; this is not a universal no-freeze or
+real-time claim. The reports retain per-phase results and raw heartbeat samples.
+No CPU speedup beyond the separately measured M5 gains is claimed here.
+
+Bounded array-cache primitives have correctness tests but are not enabled in the
+workspace. Full-input hashing/copying and prefix invalidation have costs; no
+interactive CPU benefit has yet been established. Cache integration remains an
+optional profiling candidate, not an assumed optimization.
+
+Guided black-level/WB/LSC/CCM assistants, user-supplied chart references with
+explicit color-space/illuminant metadata, remaining per-block documentation, and
+broader release/tooling work remain tracked milestones. There is no built-in
+invented chart reference table or automatic chart-detection claim. High-DPI
+desktop acceptance and changing the default launcher remain transition gates.
+
+<details>
+<summary>Historical two-window proposal (superseded; not the current implementation contract)</summary>
+
+The material below is retained as design history and parameter-coverage notes.
+Its `input.raw`/`session.json` layout, legacy required-key list, crop restrictions,
+pipeline invocation, and statements about missing tests do **not** describe the
+integrated workspace above. Use current configuration and RAW-input references
+for processing behavior.
 
 Related documents:
 
@@ -647,3 +865,5 @@ Fixtures: [`config/SVS_cam.yml`](../config/SVS_cam.yml), [`config/ROD_cam_daytim
 - Adding pytest under `tests/gui/`
 - Extending `load_raw` for arbitrary header-size skip (alignment is now `sensor_info.data_alignment`)
 - Incremental “run from module N” processing
+
+</details>

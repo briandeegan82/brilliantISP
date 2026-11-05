@@ -12,7 +12,7 @@ import numpy as np
 from scipy import ndimage
 from tqdm import tqdm
 
-from util.isp_types import BayerNoiseReductionConfig, PlatformConfig, RawBayerImage, SensorInfo
+from util.isp_types import Float32Image, BayerNoiseReductionConfig, PlatformConfig, RawBayerImage, SensorInfo
 
 
 class JointBF:
@@ -22,7 +22,7 @@ class JointBF:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: np.ndarray,
         sensor_info: SensorInfo,
         parm_bnr: BayerNoiseReductionConfig,
         platform: PlatformConfig,
@@ -36,9 +36,13 @@ class JointBF:
         self.is_save = parm_bnr["is_save"]
         self.platform = platform
 
-    def apply_jbf(self) -> RawBayerImage:
+    def apply_jbf(self, preserve_float: bool = False) -> RawBayerImage | Float32Image:
         """
         Apply bnr to the input image and return the output image
+
+        With ``preserve_float=True`` the final clip/uint32 cast is omitted
+        and finite float32 code values in the declared HDR range are
+        returned instead.
         """
         in_img = self.img
         bayer_pattern = self.sensor_info["bayer_pattern"]
@@ -115,8 +119,9 @@ class JointBF:
         kern_filt_g_at_b = ndimage.convolve(in_img, interp_kern_g_at_b, mode="reflect")
 
         # clip any interpolation overshoots to [0 1] range
-        kern_filt_g_at_r = np.clip(kern_filt_g_at_r, 0, 1)
-        kern_filt_g_at_b = np.clip(kern_filt_g_at_b, 0, 1)
+        if not preserve_float:
+            kern_filt_g_at_r = np.clip(kern_filt_g_at_r, 0, 1)
+            kern_filt_g_at_b = np.clip(kern_filt_g_at_b, 0, 1)
 
         interp_g = in_img.copy()
         interp_g_at_r = np.zeros((np.uint32(height / 2), np.uint32(width / 2)), dtype=np.float32)
@@ -213,6 +218,11 @@ class JointBF:
             bnr_out_img[0:height:2, 1:width:2] = out_img_b[0 : np.size(out_img_b, 0) : 1, 0 : np.size(out_img_b, 1) : 1]
 
         # convert normalized image to 32-bit range
+        if preserve_float:
+            out = (bnr_out_img * ((2**bit_depth) - 1)).astype(np.float32)
+            if not np.all(np.isfinite(out)):
+                raise ValueError("Bayer noise reduction produced nonfinite output")
+            return out
         bnr_out_img = (np.clip(bnr_out_img, 0, 1) * ((2**bit_depth) - 1)).astype(np.uint32)
         return bnr_out_img
 

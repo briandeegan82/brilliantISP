@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +25,7 @@ SESSION_JSON = "session.json"
 
 DEFAULT_UI_STATE: dict[str, Any] = {
     "original_source_path": None,
+    "input_filename": INPUT_RAW,
     "header_size": 0,
     "data_alignment": "LSB",  # Default to LSB (no shift) - most RAW files are pre-aligned
     "flip_h": False,
@@ -35,13 +38,28 @@ DEFAULT_UI_STATE: dict[str, Any] = {
 }
 
 
+def validate_input_filename(name: Any) -> str:
+    """Strict staged-input filename contract: a plain basename only."""
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"unsafe input filename {name!r}")
+    if name in (".", "..") or "\x00" in name or "/" in name or "\\" in name:
+        raise ValueError(f"unsafe input filename {name!r}")
+    if Path(name).name != name or os.path.isabs(name):
+        raise ValueError(f"unsafe input filename {name!r}")
+    return name
+
+
 @dataclass
 class SessionPaths:
     directory: Path
+    input_filename: str = INPUT_RAW
+
+    def __post_init__(self) -> None:
+        self.input_filename = validate_input_filename(self.input_filename)
 
     @property
     def input_raw(self) -> Path:
-        return self.directory / INPUT_RAW
+        return self.directory / validate_input_filename(self.input_filename)
 
     @property
     def config_yml(self) -> Path:
@@ -66,6 +84,13 @@ class GuiSession:
         self.session_id = session_id
         self.paths = paths
         self.ui_state: dict[str, Any] = {**DEFAULT_UI_STATE, **(ui_state or {})}
+        if "input_filename" in self.ui_state:
+            saved_name = self.ui_state["input_filename"]
+            if saved_name is None or saved_name == "":
+                raise ValueError(
+                    f"unsafe stored input filename {saved_name!r}"
+                )
+            self.paths.input_filename = validate_input_filename(saved_name)
         self.last_payload_meta = None
 
     @property
@@ -106,6 +131,9 @@ class GuiSession:
         if not session.paths.config_yml.is_file():
             raise FileNotFoundError(f"Missing {CONFIG_YML} in {directory}")
         config = load_preset_yaml(session.paths.config_yml)
+        platform = config.get("platform")
+        if isinstance(platform, dict):
+            platform["filename"] = session.paths.input_raw.name
         write_last_session_id(session_id, root=root if root is not None else directory.parent)
         return session, config
 
@@ -118,7 +146,7 @@ class GuiSession:
     def ensure_platform_filename(self, config: dict[str, Any]) -> None:
         platform = config.setdefault("platform", {})
         if isinstance(platform, dict):
-            platform["filename"] = INPUT_RAW
+            platform["filename"] = self.paths.input_raw.name
 
     def write_config(self, config: dict[str, Any]) -> None:
         self.ensure_platform_filename(config)
@@ -131,16 +159,44 @@ class GuiSession:
         )
 
     def copy_raw_from(self, source: str | Path) -> Path:
-        source = Path(source)
+        """Stage the original source bytes unchanged into the session.
+
+        The staged filename keeps the source's own suffix (lowercase) so a
+        .pgm/.tiff input round-trips its container instead of being
+        normalized to input.raw; sessions staged before this behavior kept
+        their original input.raw and are not reinterpreted.
+        """
+        source = Path(source).expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(f"RAW not found: {source}")
-        payload = read_raw_payload(source)
-        self.paths.input_raw.write_bytes(payload.data)
+        suffix = source.suffix.lower() or ".raw"
+        staged_name = f"input{suffix}"
+        target = self.paths.directory / staged_name
+        payload_meta = None
+        if suffix == ".pgm":
+            payload_meta = read_raw_payload(source)
+            if not payload_meta.is_pgm:
+                raise ValueError(f"{source}: not a valid PGM container")
+        if source != target:
+            tmp_name: str | None = None
+            try:
+                fd, tmp_name = tempfile.mkstemp(
+                    dir=str(self.paths.directory), prefix=".stage-", suffix=".tmp"
+                )
+                os.close(fd)
+                shutil.copyfile(source, tmp_name)
+                os.replace(tmp_name, target)
+            finally:
+                if tmp_name is not None and os.path.exists(tmp_name):
+                    os.unlink(tmp_name)
+        self.last_payload_meta = payload_meta
+        self.paths.input_filename = staged_name
+        self.ui_state["input_filename"] = staged_name
         self.ui_state["original_source_path"] = str(source)
-        self.ui_state["header_size"] = 0 if payload.is_pgm else self.ui_state.get("header_size", 0)
-        self.last_payload_meta = payload
+        if suffix == ".pgm":
+            self.ui_state["header_size"] = 0
         self.write_ui_state()
-        return self.paths.input_raw
+        return target
 
     def reload_raw(self) -> Path:
         src = self.ui_state.get("original_source_path")

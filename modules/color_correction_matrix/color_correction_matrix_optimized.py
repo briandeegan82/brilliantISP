@@ -10,7 +10,9 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 import time
 import numpy as np
 
-from util.isp_types import ColorCorrectionMatrixConfig, PlatformConfig, RGBImage, SensorInfo, UInt16Image
+from util.isp_types import ColorCorrectionMatrixConfig, Float32Image, PlatformConfig, RGBImage, SensorInfo, UInt16Image
+from modules.color_correction_matrix.color_correction_matrix import _matrix_linear
+from util.native_array import as_float32
 from util.utils import save_output_array
 
 
@@ -28,7 +30,7 @@ class ColorCorrectionMatrixOptimized:
         self.enable = parm_ccm["is_enable"]
         self.sensor_info = sensor_info
         self.parm_ccm = parm_ccm
-        self.output_bit_depth = sensor_info["output_bit_depth"]
+        self.output_bit_depth = sensor_info.get("output_bit_depth", 16)
         self.ccm_mat = None
         self.is_save = parm_ccm["is_save"]
         self.platform = platform
@@ -68,6 +70,17 @@ class ColorCorrectionMatrixOptimized:
         out = out.reshape(self.img.shape)
         out = (out * input_max).astype(np.uint16)
         return out
+
+    def compute_linear(self) -> Float32Image:
+        """Native linear path on normalized RGB: matrix only, no clip/rescale.
+
+        Disabled is an exact identity pass and never reads the matrix
+        parameters.
+        """
+        if not self.enable:
+            return as_float32(self.img, name="color_correction_matrix")
+        out = _matrix_linear(self.img, self.parm_ccm)
+        return as_float32(out, name="color_correction_matrix")
 
     def save(self) -> None:
         """

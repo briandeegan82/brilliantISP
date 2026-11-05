@@ -11,7 +11,8 @@ import time
 import numpy as np
 from typing import cast
 
-from util.isp_types import DigitalGainConfig, PlatformConfig, SensorInfo, UInt32Image
+from util.isp_types import BayerImage, DigitalGainConfig, Float32Image, PlatformConfig, SensorInfo, UInt32Image
+from util.native_array import as_float32
 from util.utils import save_output_array
 
 
@@ -22,7 +23,7 @@ class DigitalGain:
 
     def __init__(
         self,
-        img: np.ndarray,
+        img: BayerImage,
         platform: PlatformConfig,
         sensor_info: SensorInfo,
         parm_dga: DigitalGainConfig,
@@ -34,7 +35,7 @@ class DigitalGain:
         self.is_auto = bool(parm_dga.get("is_auto", False))
         self.gains_array = parm_dga["gain_array"]
         self.current_gain = parm_dga["current_gain"]
-        self.ae_feedback = parm_dga["ae_feedback"]
+        self.ae_feedback = parm_dga.get("ae_feedback")
         self.sensor_info = sensor_info
         self.platform = platform
         self.param_dga = parm_dga
@@ -59,8 +60,16 @@ class DigitalGain:
             )
 
         # converting to float image
+        gval = self._select_gain()
         self.img = self.img.astype(np.float32, copy=False)
+        self.img = self._apply_gain_to(gval)
 
+        # np.uint32 bit to contain the bpp bit raw
+        self.img = np.clip(self.img, 0, max_code).astype(np.uint32)
+        return cast(UInt32Image, self.img)
+
+    def _select_gain(self) -> float:
+        """Resolve the active gain index and return the multiplier."""
         # Gains are applied on the basis of AE-Feedback.
         # 'ae_correction == 0' - Default Gain is applied before AE feedback
         # 'ae_correction > 0' - Image is overexposed
@@ -78,15 +87,23 @@ class DigitalGain:
 
         # Gain_Array is an array of pre-defined digital gains for ISP
         gval = float(self.gains_array[self.current_gain])
-        self.img = gval * self.img
-
         self.logger.info(f"  Applied gain index {self.current_gain} × {gval:g} (linear multiplier on raw)")
         if self.is_debug:
             self.logger.info(f"   - DG  - Applied Gain = {gval}")
+        return gval
 
-        # np.uint32 bit to contain the bpp bit raw
-        self.img = np.clip(self.img, 0, max_code).astype(np.uint32)
-        return cast(UInt32Image, self.img)
+    def _apply_gain_to(self, gval: float) -> np.ndarray:
+        with np.errstate(over="ignore", invalid="ignore"):
+            out = gval * self.img.astype(np.float64)
+        return as_float32(out, name="digital_gain")
+
+    def compute_linear(self) -> tuple[Float32Image, int]:
+        """Native linear path: float32 gain output, no clip/cast."""
+        if not self.is_enable:
+            return cast(Float32Image, as_float32(self.img, name="digital_gain")), self.current_gain
+        gval = self._select_gain()
+        out = self._apply_gain_to(gval)
+        return cast(Float32Image, out), self.current_gain
 
     def save(self) -> None:
         """

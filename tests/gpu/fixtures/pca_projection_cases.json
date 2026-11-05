@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "source_archive_sha256": "80ff733e201b239a3e53a12d84af0025f4593e7cd98d35e452002c2870834c5a",
+  "reference": "NumPy 1.26.4 CPU matrix-vector projection, captured before GPU kernel implementation",
+  "cases": [
+    {
+      "id": "original",
+      "row_cycle": [[2.0, 1.0, 0.0], [1.0, 0.0, 2.0], [0.0, 2.0, 1.0]],
+      "repeat": 10,
+      "unit_float64_bits": [4603375528459645725, 4603375528459645725, 4603375528459645725],
+      "projection_float64_bits_per_row_cycle": [4610479282544200876, 4610479282544200876, 4610479282544200876]
+    },
+    {
+      "id": "scaled",
+      "row_cycle": [[2100.0, 1100.0, 100.0], [1100.0, 100.0, 2100.0], [100.0, 2100.0, 1100.0]],
+      "repeat": 10,
+      "unit_float64_bits": [4603375528459645724, 4603375528459645724, 4603375528459645724],
+      "projection_float64_bits_per_row_cycle": [4656094219458763355, 4656094219458763355, 4656094219458763355]
+    }
+  ]
+}

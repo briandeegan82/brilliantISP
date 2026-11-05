@@ -33,14 +33,17 @@ class PiecewiseCurve:
         # Initialize debug logger
         self.logger = get_debug_logger("PWC", config=self.platform)
 
+    @staticmethod
     def generate_decompanding_lut(companded_pin, companded_pout, max_input_value=4095):
-        if len(companded_pin) != len(companded_pout):
-            raise ValueError("companded_pin and companded_pout must have the same length.")
+        pins, values = PiecewiseCurve._validated_knots(companded_pin, companded_pout)
+        companded_pin, companded_pout = pins.astype(np.int64), values
 
         # Size LUT to cover both the sensor code range and any knee past max
         # (datasheets sometimes list 2^N instead of 2^N-1 as the final pin).
         max_pin = int(max(companded_pin)) if len(companded_pin) else 0
         lut_max = max(int(max_input_value), max_pin)
+        if lut_max > 65536:
+            raise ValueError("PWC input LUT exceeds 65537 entries; use execute() for sparse-knot interpolation")
         lut = np.zeros(lut_max + 1, dtype=np.float64)
 
         # Handle the very first point
@@ -64,6 +67,22 @@ class PiecewiseCurve:
         lut[last_in:] = last_out
 
         return lut
+
+    @staticmethod
+    def _validated_knots(companded_pin, companded_pout):
+        pins, values = np.asarray(companded_pin), np.asarray(companded_pout)
+        if pins.ndim != 1 or values.ndim != 1 or pins.size < 2 or pins.size != values.size \
+                or pins.dtype.kind not in "uif" or values.dtype.kind not in "uif":
+            raise ValueError("PWC requires matching real 1-D input/output knots, with at least two entries")
+        if not np.all(np.isfinite(pins)) or not np.all(np.isfinite(values)) \
+                or np.any(pins < 0) or np.any(pins > 2**32) or np.any(pins != np.floor(pins)):
+            raise ValueError("PWC knots must be finite; input knots must be integral codes in 0..2**32")
+        if np.any(values < 0) or np.any(values > 2**32):
+            raise ValueError("PWC output knots must be in 0..2**32 (including the endpoint sentinel)")
+        pins, values = pins.astype(np.float64), values.astype(np.float64)
+        if np.any(np.diff(pins) <= 0):
+            raise ValueError("PWC input knots must be strictly increasing")
+        return pins, values
 
     @staticmethod
     def resolve_black_levels(parm_cmpd):
@@ -231,27 +250,30 @@ class PiecewiseCurve:
         pre_bl, post_bl = PiecewiseCurve.resolve_black_levels(self.parm_cmpd)
 
         # LUT input range after pre-linearization black-level subtraction.
-        max_lut_input = (2**self.bit_depth - 1) - pre_bl
+        max_lut_input = (2**int(self.bit_depth) - 1) - pre_bl
 
-        lut = PiecewiseCurve.generate_decompanding_lut(
-            self.parm_cmpd["companded_pin"],
-            self.parm_cmpd["companded_pout"],
-            max_input_value=max_lut_input,
+        pins, values = self._validated_knots(self.companded_pin, self.companded_pout)
+        lut = (
+            self.generate_decompanding_lut(pins, values, max_input_value=max_lut_input)
+            if max(max_lut_input, pins[-1]) <= 65536 else None
         )
 
-        if self.is_debug:
+        if self.is_debug and lut is not None:
             self.plot_lut(lut, f"Decompanding LUT - {self.platform['in_file']}")
 
         # 1. Subtract pre-linearization black level (companded domain).
-        img_pre = np.clip(self.img.astype(np.int64) - pre_bl, 0, max_lut_input)
+        img_pre = np.clip(np.asarray(self.img, dtype=np.int64) - pre_bl, 0, max_lut_input)
 
         # 2. Apply the PWC LUT (linearization).
-        self.img = lut[img_pre.astype(np.uint32)]
+        self.img = lut[img_pre.astype(np.uint32)] if lut is not None else np.interp(img_pre, pins, values)
 
         # 3. Subtract post-linearization black level (linear / decompanded domain).
         if post_bl:
             self.img = np.clip(self.img - post_bl, 0, None)
 
+        if not np.all(np.isfinite(self.img)):
+            raise ValueError("decompanding output must be finite")
+        self.img = np.clip(np.asarray(self.img, np.float64), 0, 2**int(self.sensor_info.get("hdr_bit_depth", self.bit_depth)) - 1)
         self.logger.info(f"  Black levels: pre={pre_bl}, post={post_bl}; Execution time: {time.time() - start:.3f}s")
         self.save()
         return self.img.astype(np.uint32)

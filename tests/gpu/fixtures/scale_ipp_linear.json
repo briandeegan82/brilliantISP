@@ -1,0 +1,19 @@
+{
+  "seed": 10204,
+  "source": {
+    "shape": [7, 2581],
+    "dtype": "float32",
+    "distribution": "RandomState(seed).rand(*shape), scaled from [0, 1) to [-64, 64)"
+  },
+  "reference": {
+    "shape": [7, 1920],
+    "dtype": "float32",
+    "operation": "cv2.resize(source, (1920, 7), interpolation=cv2.INTER_LINEAR)",
+    "opencv": "4.11.0",
+    "ipp_enabled": true,
+    "ipp": "ippIP AVX2 (l9) 2021.12.0 (-) Apr 25 2024"
+  },
+  "arrays": "scale_ipp_linear.npz",
+  "coordinate_convention": "float64 half-pixel coordinates, float32 fraction",
+  "arithmetic": "float32 neighbor difference, fused-style lerp, horizontal before vertical"
+}

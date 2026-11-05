@@ -41,8 +41,10 @@ class Scale:
         sensor_info: SensorInfo,
         parm_sca: ScaleConfig,
         conv_std: int,
+        cpu_only: bool = False,
     ) -> None:
         self.img = img
+        self.cpu_only = cpu_only
         self.enable = parm_sca["is_enable"]
         self.sensor_info = sensor_info
         self.parm_sca = parm_sca
@@ -55,7 +57,7 @@ class Scale:
 
         # Check if GPU acceleration should be used
         self.use_gpu = False
-        if GPU_VERSION_AVAILABLE:
+        if GPU_VERSION_AVAILABLE and not cpu_only:
             try:
                 from util.gpu_utils import is_gpu_available, should_use_gpu
 
@@ -78,7 +80,7 @@ class Scale:
             scaled_img = np.empty((self.new_size[0], self.new_size[1], 3), dtype="uint8")
 
         # Use GPU-accelerated scaling if available and beneficial
-        if self.use_gpu and GPU_VERSION_AVAILABLE:
+        if self.use_gpu and not getattr(self, "cpu_only", False) and GPU_VERSION_AVAILABLE:
             try:
                 scale_gpu = ScaleGPU(self.img, self.platform, self.sensor_info, self.parm_sca, self.conv_std)
                 return scale_gpu.apply_scaling()
@@ -141,6 +143,30 @@ class Scale:
                     self.platform,
                     self.conv_std,
                 )
+
+    def compute_linear(self) -> np.ndarray:
+        """Native float path: Scale2D CPU workflow on checked float32, no save/GPU."""
+        from util.native_array import as_float32
+        if not self.enable:
+            return as_float32(self.img, name="scale")
+        src = as_float32(self.img, name="scale input")
+        if src.ndim != 3 or src.shape[-1] != 3 or src.size == 0 or not np.all(np.isfinite(src)):
+            raise ValueError(f"scale input must be finite HWC3, got {src.shape}")
+        for name in ("new_height", "new_width"):
+            value = self.parm_sca[name]
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float, np.integer, np.floating)) \
+                    or not np.isfinite(value) or value <= 0 or int(value) != value:
+                raise ValueError(f"scale.{name} must be a positive integer")
+        expected = (int(self.parm_sca["new_height"]), int(self.parm_sca["new_width"]))
+        out = np.empty(expected + (3,), dtype=np.float64)
+        for c in range(3):
+            scale_2d = Scale2D(src[..., c], self.sensor_info.copy(), self.parm_sca.copy(), self.platform)
+            ch = np.asarray(scale_2d.execute(), dtype=np.float64)
+            if ch.shape != expected:
+                raise ValueError(
+                    f"scale output {ch.shape} does not match declared {expected}")
+            out[..., c] = ch
+        return as_float32(out, name="scale")
 
     def execute(self) -> RGBImage:
         """

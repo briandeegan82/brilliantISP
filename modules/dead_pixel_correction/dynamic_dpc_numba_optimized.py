@@ -11,7 +11,7 @@ import logging
 import numpy as np
 from util.debug_utils import get_debug_logger
 from util.isp_types import DeadPixelCorrectionConfig, PlatformConfig, RawBayerImage, SensorInfo
-from scipy.ndimage import maximum_filter, minimum_filter
+from modules.dead_pixel_correction.dynamic_dpc import _same_color_prep
 from numba import njit, prange
 import time
 from typing import cast
@@ -40,9 +40,9 @@ class DynamicDPCNumbaOptimized:
         parm_dpc: DeadPixelCorrectionConfig,
         platform: PlatformConfig | None = None,
     ) -> None:
-        self.img = img.astype(np.float32)
+        self.img = img
         self.sensor_info = sensor_info
-        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
+        self.bpp = self.sensor_info.get("bit_depth", 16)
         self.threshold = parm_dpc["dp_threshold"]
         self.is_debug = parm_dpc.get("is_debug", False)
         self.use_numba = NUMBA_AVAILABLE and self._should_use_numba()
@@ -65,54 +65,24 @@ class DynamicDPCNumbaOptimized:
     def dynamic_dpc(self, return_mask: bool = False) -> RawBayerImage | tuple[RawBayerImage, np.ndarray]:
         height, width = self.sensor_info["height"], self.sensor_info["width"]
 
-        # Define 5x5 neighborhood footprint (cross-like)
-        window = np.array(
-            [
-                [1, 0, 1, 0, 1],
-                [0, 0, 0, 0, 0],
-                [1, 0, 0, 0, 1],
-                [0, 0, 0, 0, 0],
-                [1, 0, 1, 0, 1],
-            ]
-        )
+        # Shared same-color prep: signed float64, +/-2 neighbors, reflected
+        # boundaries (replaces the rolling 3x3 neighborhood prep).
+        f = np.asarray(self.img, dtype=np.float64)
+        if f.shape != (height, width):
+            raise ValueError(f"image shape {f.shape} does not match declared {height}x{width}")
+        (
+            detection_mask,
+            vertical_grad, horizontal_grad, left_diag_grad, right_diag_grad,
+            mean_v, mean_h, mean_ld, mean_rd,
+        ) = _same_color_prep(f, float(self.threshold))
 
-        # Compute min/max of neighborhood using optimized NumPy operations
-        max_value = maximum_filter(self.img, footprint=window, mode="mirror")
-        min_value = minimum_filter(self.img, footprint=window, mode="mirror")
-
-        # Condition 1: pixel outside valid range
-        mask_cond1 = (self.img < min_value) | (self.img > max_value)
-
-        # Condition 2: pixel differs from all neighbors by > threshold
-        neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-
-        diffs = [np.abs(self.img - np.roll(np.roll(self.img, dy, axis=0), dx, axis=1)) for dy, dx in neighbor_offsets]
-        diff_array = np.stack(diffs, axis=2)
-        mask_cond2 = np.all(diff_array > self.threshold, axis=2)
-
-        # Final detection mask
-        detection_mask = mask_cond1 & mask_cond2
-
-        # Compute directional gradients
-        vertical_grad = np.abs(self.img - np.roll(self.img, 2, axis=0))
-        horizontal_grad = np.abs(self.img - np.roll(self.img, 2, axis=1))
-        left_diag_grad = np.abs(self.img - np.roll(np.roll(self.img, 2, axis=0), 2, axis=1))
-        right_diag_grad = np.abs(self.img - np.roll(np.roll(self.img, 2, axis=0), -2, axis=1))
-
-        # Stack gradients and find min direction
         grads = np.stack([vertical_grad, horizontal_grad, left_diag_grad, right_diag_grad], axis=2)
         min_grad = np.min(grads, axis=2)
-
-        # Directional means (2-neighbor average)
-        mean_v = (np.roll(self.img, -2, axis=0) + np.roll(self.img, 2, axis=0)) / 2
-        mean_h = (np.roll(self.img, -2, axis=1) + np.roll(self.img, 2, axis=1)) / 2
-        mean_ld = (np.roll(np.roll(self.img, -2, axis=0), -2, axis=1) + np.roll(np.roll(self.img, 2, axis=0), 2, axis=1)) / 2
-        mean_rd = (np.roll(np.roll(self.img, -2, axis=0), 2, axis=1) + np.roll(np.roll(self.img, 2, axis=0), -2, axis=1)) / 2
 
         # Apply correction with Numba kernel (only the compute-intensive part)
         if self.use_numba:
             corrected_img = _apply_correction_numba(
-                self.img,
+                f,
                 detection_mask,
                 min_grad,
                 vertical_grad,
@@ -126,7 +96,7 @@ class DynamicDPCNumbaOptimized:
             )
         else:
             corrected_img = _apply_correction_cpu(
-                self.img,
+                f,
                 detection_mask,
                 min_grad,
                 vertical_grad,
@@ -140,7 +110,7 @@ class DynamicDPCNumbaOptimized:
             )
 
         # Insert corrected pixels into image
-        dpc_img = np.where(detection_mask, corrected_img, self.img)
+        dpc_img = np.where(detection_mask, corrected_img, f)
 
         # Clip to sensor bit depth
         max_val = (1 << self.bpp) - 1

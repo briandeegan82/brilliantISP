@@ -8,7 +8,7 @@ Author: Brian Deegan (chatGPT)
 import numpy as np
 from scipy.ndimage import convolve
 
-from util.isp_types import DemosaicMasks, RawBayerImage
+from util.isp_types import BayerImage, DemosaicMasks
 
 
 class BilinearDemosaic:
@@ -17,9 +17,29 @@ class BilinearDemosaic:
     Works for any Bayer layout as given by (mask_r, mask_g, mask_b).
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]  # accept bool/0-1
+
+    def _periodic_mask_tiles(self) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Return the 2x2 periodic tile for each mask when every mask is a
+        regular binary-periodic pattern matching the raw shape; else None."""
+        tiles: list[np.ndarray] = []
+        for mask in self.masks:
+            if self.img.shape != mask.shape or mask.shape[0] < 2 or mask.shape[1] < 2:
+                return None
+            tile = mask[:2, :2]
+            if not np.all((tile == 0) | (tile == 1)):
+                return None
+            if not (
+                bool(np.all(mask[0::2, 0::2] == tile[0, 0]))
+                and bool(np.all(mask[0::2, 1::2] == tile[0, 1]))
+                and bool(np.all(mask[1::2, 0::2] == tile[1, 0]))
+                and bool(np.all(mask[1::2, 1::2] == tile[1, 1]))
+            ):
+                return None
+            tiles.append(tile)
+        return (tiles[0], tiles[1], tiles[2])
 
     @staticmethod
     def _interp(
@@ -27,9 +47,19 @@ class BilinearDemosaic:
         mask: np.ndarray,
         kernel: np.ndarray,
         mode: str = "mirror",
+        *,
+        mask_tile: np.ndarray | None = None,
     ) -> np.ndarray:
         """Convolve channel & mask with kernel and normalize safely."""
         num = convolve(channel_masked, kernel, mode=mode)
+        if mask_tile is not None and mode == "mirror":
+            den = convolve(mask_tile, kernel, mode="mirror")
+            out = np.zeros(num.shape, dtype=np.float32)
+            for dy in range(2):
+                for dx in range(2):
+                    if den[dy, dx] > 0:
+                        np.divide(num[dy::2, dx::2], den[dy, dx], out=out[dy::2, dx::2])
+            return out
         den = convolve(mask, kernel, mode=mode)
         out = np.zeros_like(num)
         np.divide(num, den, out=out, where=den > 0)
@@ -54,25 +84,35 @@ class BilinearDemosaic:
         diag = np.array([[1, 0, 1], [0, 0, 0], [1, 0, 1]], np.float32) * 0.25  # 4 diagonals
 
         # --- Green: fill at R/B using cross neighbors of *green* samples ---
-        G_at_RB = self._interp(G0, mask_g, cross, mode="mirror")
+        tiles = self._periodic_mask_tiles()
+        tr = tiles[0] if tiles else None
+        tg = tiles[1] if tiles else None
+        tb = tiles[2] if tiles else None
+
+        G_at_RB = self._interp(G0, mask_g, cross, mode="mirror", mask_tile=tg)
         G = G0 + (1.0 - mask_g) * G_at_RB  # only fill where green is missing
 
         # Helper: “does this pixel have same-color neighbors horizontally/vertically?”
         # Use constant padding (no wrap) for these boolean maps.
-        has_R_h = convolve(mask_r, np.array([[0, 0, 0], [1, 0, 1], [0, 0, 0]], np.float32), mode="constant", cval=0.0) > 0
-        has_R_v = convolve(mask_r, np.array([[0, 1, 0], [0, 0, 0], [0, 1, 0]], np.float32), mode="constant", cval=0.0) > 0
-
-        has_B_h = convolve(mask_b, np.array([[0, 0, 0], [1, 0, 1], [0, 0, 0]], np.float32), mode="constant", cval=0.0) > 0
-        has_B_v = convolve(mask_b, np.array([[0, 1, 0], [0, 0, 0], [0, 1, 0]], np.float32), mode="constant", cval=0.0) > 0
+        if tiles is not None:
+            has_R_h = np.zeros(mask_r.shape, dtype=bool)
+            has_R_h[:, 1:] |= mask_r[:, :-1] > 0
+            has_R_h[:, :-1] |= mask_r[:, 1:] > 0
+            has_B_h = np.zeros(mask_b.shape, dtype=bool)
+            has_B_h[:, 1:] |= mask_b[:, :-1] > 0
+            has_B_h[:, :-1] |= mask_b[:, 1:] > 0
+        else:
+            has_R_h = convolve(mask_r, np.array([[0, 0, 0], [1, 0, 1], [0, 0, 0]], np.float32), mode="constant", cval=0.0) > 0
+            has_B_h = convolve(mask_b, np.array([[0, 0, 0], [1, 0, 1], [0, 0, 0]], np.float32), mode="constant", cval=0.0) > 0
 
         # Precompute interpolants from same-color samples (proper normalization)
-        R_h = self._interp(R0, mask_r, horiz)  # red from left/right
-        R_v = self._interp(R0, mask_r, vert)  # red from up/down
-        R_d = self._interp(R0, mask_r, diag)  # red from diagonals
+        R_h = self._interp(R0, mask_r, horiz, mask_tile=tr)  # red from left/right
+        R_v = self._interp(R0, mask_r, vert, mask_tile=tr)  # red from up/down
+        R_d = self._interp(R0, mask_r, diag, mask_tile=tr)  # red from diagonals
 
-        B_h = self._interp(B0, mask_b, horiz)
-        B_v = self._interp(B0, mask_b, vert)
-        B_d = self._interp(B0, mask_b, diag)
+        B_h = self._interp(B0, mask_b, horiz, mask_tile=tb)
+        B_v = self._interp(B0, mask_b, vert, mask_tile=tb)
+        B_d = self._interp(B0, mask_b, diag, mask_tile=tb)
 
         # --- Red: keep known; fill missing according to classic bilinear rules ---
         R = R0.copy()

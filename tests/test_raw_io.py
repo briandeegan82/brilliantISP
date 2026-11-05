@@ -52,15 +52,17 @@ def test_apply_raw_flips() -> None:
     np.testing.assert_array_equal(both, np.flipud(np.fliplr(img)))
 
 
-def test_session_copy_strips_pgm(tmp_path: Path) -> None:
+def test_session_copy_preserves_pgm(tmp_path: Path) -> None:
     raster = bytes([9, 8, 7, 6])
     src = _p5(tmp_path / "source.pgm", 2, 2, raster)
     session, _ = GuiSession.create_new(root=tmp_path, preset_path=SVS)
     dest = session.copy_raw_from(src)
-    assert dest.read_bytes() == raster
-    assert src.read_bytes().startswith(b"P5")
+    assert dest.name == "input.pgm"
+    assert dest.read_bytes() == src.read_bytes()
+    assert dest.read_bytes().startswith(b"P5")
     assert session.last_payload_meta is not None
     assert session.last_payload_meta.is_pgm
+    assert session.ui_state["input_filename"] == "input.pgm"
 
 
 def test_hdr_8_3mp_yaml_schema() -> None:
@@ -98,7 +100,7 @@ def test_load_raw_msb_alignment(tmp_path: Path) -> None:
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
 
     codes = np.array([[240, 1000, 512, 2000], [100, 3000, 0, 4095]], dtype=np.uint16)
-    raster = (codes << 4).astype("<u2").tobytes()
+    raster = (codes << 4).astype(">u2").tobytes()
     _p5(tmp_path / "msb.pgm", 4, 2, raster, maxval=65535)
 
     isp = BrilliantISP(str(tmp_path), str(cfg_path), outFileName="", output_path=str(tmp_path / "out"))

@@ -4,29 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from util.raw_decode import RawFormat, RawFormatError, storage_bytes_per_sample
+
 
 def _as_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def bytes_per_sample(bit_depth: int, data_format: str | None) -> int:
-    fmt = (data_format or "").lower()
-    if "uint8" in fmt or fmt in ("raw8", "u8"):
-        return 1
-    if "uint32" in fmt or fmt in ("raw32", "u32"):
-        return 4
-    if "uint16" in fmt or fmt in ("raw16", "u16"):
-        return 2
-    if bit_depth <= 8:
-        return 1
-    if bit_depth <= 16:
-        return 2
-    if bit_depth <= 24:
-        return 3
-    return 4
+    try:
+        return storage_bytes_per_sample(data_format, bit_depth)
+    except RawFormatError:
+        return 0
 
 
 def compute_format_stats(
@@ -38,27 +30,49 @@ def compute_format_stats(
     crop = config.get("crop") or {}
     scale = config.get("scale") or {}
 
-    width = _as_int(sensor.get("width"))
-    height = _as_int(sensor.get("height"))
-    bit_depth = _as_int(sensor.get("bit_depth"), 16)
-    data_format = sensor.get("data_format")
+    format_error = ""
+    width = height = bit_depth = 0
+    bpp = 0
+    row_bytes = 0
+    estimated = 0
+    try:
+        probe = dict(sensor)
+        probe.setdefault("bayer_pattern", "rggb")
+        probe.setdefault("bit_depth", 16)
+        probe.setdefault("header_bytes", header_bytes)
+        fmt = RawFormat.from_sensor_info(probe)
+        width = fmt.width
+        height = fmt.height
+        bit_depth = fmt.bit_depth
+        bpp = storage_bytes_per_sample(fmt.storage_format, bit_depth)
+        row_bytes = (
+            fmt.row_stride_bytes
+            if fmt.row_stride_bytes is not None
+            else width * bpp
+        )
+        estimated = fmt.header_bytes + height * row_bytes
+    except (RawFormatError, ValueError, TypeError, OverflowError) as exc:
+        format_error = f"invalid RAW layout: {exc}"
+        bpp = 0
+        estimated = 0
+
+    embedded_top = _as_int(sensor.get("embedded_rows_top"))
+    embedded_bottom = _as_int(sensor.get("embedded_rows_bottom"))
+    active_rows = max(0, height - embedded_top - embedded_bottom)
 
     crop_on = bool(crop.get("is_enable"))
     if crop_on:
         eff_w = _as_int(crop.get("new_width"), width)
-        eff_h = _as_int(crop.get("new_height"), height)
+        eff_h = _as_int(crop.get("new_height"), active_rows)
     else:
-        eff_w, eff_h = width, height
+        eff_w, eff_h = width, active_rows
 
-    sensor_pixels = max(width, 0) * max(height, 0)
+    sensor_pixels = max(width, 0) * max(active_rows, 0)
     active = max(eff_w, 0) * max(eff_h, 0)
     if crop_on and sensor_pixels > 0:
         crop_pct = 100.0 * (1.0 - (active / sensor_pixels))
     else:
         crop_pct = 0.0
-
-    bpp = bytes_per_sample(bit_depth, str(data_format) if data_format else None)
-    estimated = max(0, int(header_bytes)) + sensor_pixels * bpp
 
     if bool(scale.get("is_enable")):
         out_w = _as_int(scale.get("new_width"), eff_w)
@@ -75,4 +89,5 @@ def compute_format_stats(
         "output_width": out_w,
         "output_height": out_h,
         "bytes_per_sample": bpp,
+        "format_error": format_error,
     }

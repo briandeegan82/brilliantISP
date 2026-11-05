@@ -49,64 +49,36 @@ class BlackLevelCorrection:
         gr_offset = self.param_blc["gr_offset"]
         b_offset = self.param_blc["b_offset"]
 
-        r_sat = self.param_blc["r_sat"]
-        gr_sat = self.param_blc["gr_sat"]
-        gb_sat = self.param_blc["gb_sat"]
-        b_sat = self.param_blc["b_sat"]
+        offsets = np.asarray((r_offset, gr_offset, gb_offset, b_offset))
+        if offsets.dtype.kind not in "iuf" or not np.all(np.isfinite(offsets)) \
+                or np.any(np.abs(offsets) > np.finfo(np.float64).max):
+            raise ValueError("black-level offsets must be finite")
+        offsets = offsets.astype(np.float64)
+        denominators = np.ones(4, np.float64)
+        if self.is_linearize:
+            saturations = np.asarray([self.param_blc[key] for key in ("r_sat", "gr_sat", "gb_sat", "b_sat")])
+            if saturations.dtype.kind not in "iuf" or not np.all(np.isfinite(saturations)) \
+                    or np.any(np.abs(saturations) > np.finfo(np.float64).max):
+                raise ValueError("black-level saturation values must be finite")
+            with np.errstate(over="ignore", invalid="ignore"):
+                denominators = saturations.astype(np.float64) - offsets
+            if not np.all(np.isfinite(denominators)) or np.any(denominators <= 0):
+                raise ValueError("black-level saturation minus offset must be finite and positive")
+        raw = self.img.astype(np.float64)
+        layouts = {"rggb": (0, 1, 2, 3), "bggr": (3, 2, 1, 0),
+                   "grbg": (1, 0, 3, 2), "gbrg": (2, 3, 0, 1)}
+        if bayer not in layouts:
+            raise ValueError(f"Unsupported black-level Bayer pattern {bayer!r}")
 
-        raw = self.img.astype(np.float32)
-
-        if bayer == "rggb":
-
-            # implementing this formula with condition
-            # ((img - blc) / (sat_level-blc)) * bitRange
-
-            raw[0::2, 0::2] = raw[0::2, 0::2] - r_offset
-            raw[0::2, 1::2] = raw[0::2, 1::2] - gr_offset
-            raw[1::2, 0::2] = raw[1::2, 0::2] - gb_offset
-            raw[1::2, 1::2] = raw[1::2, 1::2] - b_offset
-
-            if self.is_linearize is True:
-                raw[0::2, 0::2] = raw[0::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                raw[0::2, 1::2] = raw[0::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                raw[1::2, 0::2] = raw[1::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                raw[1::2, 1::2] = raw[1::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-
-        elif bayer == "bggr":
-            raw[0::2, 0::2] = raw[0::2, 0::2] - b_offset
-            raw[0::2, 1::2] = raw[0::2, 1::2] - gb_offset
-            raw[1::2, 0::2] = raw[1::2, 0::2] - gr_offset
-            raw[1::2, 1::2] = raw[1::2, 1::2] - r_offset
-
-            if self.is_linearize is True:
-                raw[0::2, 0::2] = raw[0::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                raw[0::2, 1::2] = raw[0::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                raw[1::2, 0::2] = raw[1::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                raw[1::2, 1::2] = raw[1::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-
-        elif bayer == "grbg":
-            raw[0::2, 0::2] = raw[0::2, 0::2] - gr_offset
-            raw[0::2, 1::2] = raw[0::2, 1::2] - r_offset
-            raw[1::2, 0::2] = raw[1::2, 0::2] - b_offset
-            raw[1::2, 1::2] = raw[1::2, 1::2] - gb_offset
-
-            if self.is_linearize is True:
-                raw[0::2, 0::2] = raw[0::2, 0::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
-                raw[0::2, 1::2] = raw[0::2, 1::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                raw[1::2, 0::2] = raw[1::2, 0::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                raw[1::2, 1::2] = raw[1::2, 1::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-
-        elif bayer == "gbrg":
-            raw[0::2, 0::2] = raw[0::2, 0::2] - gb_offset
-            raw[0::2, 1::2] = raw[0::2, 1::2] - b_offset
-            raw[1::2, 0::2] = raw[1::2, 0::2] - r_offset
-            raw[1::2, 1::2] = raw[1::2, 1::2] - gr_offset
-
-            if self.is_linearize is True:
-                raw[0::2, 0::2] = raw[0::2, 0::2] / (gb_sat - gb_offset) * ((2**bpp) - 1)
-                raw[0::2, 1::2] = raw[0::2, 1::2] / (b_sat - b_offset) * ((2**bpp) - 1)
-                raw[1::2, 0::2] = raw[1::2, 0::2] / (r_sat - r_offset) * ((2**bpp) - 1)
-                raw[1::2, 1::2] = raw[1::2, 1::2] / (gr_sat - gr_offset) * ((2**bpp) - 1)
+        # implementing this formula with condition
+        # ((img - blc) / (sat_level-blc)) * bitRange
+        for site, channel in enumerate(layouts[bayer]):
+            row, col = divmod(site, 2)
+            view = raw[row::2, col::2]
+            view -= offsets[channel]
+            if self.is_linearize:
+                span = denominators[channel]
+                view[:] = np.clip(view, 0, span) / span * ((2**bpp) - 1)
 
         raw_blc = np.clip(raw, 0, (2**bpp) - 1).astype(np.uint32)
         return raw_blc

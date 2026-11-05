@@ -94,7 +94,9 @@ class SharedConfig:
         return any(d == prefix or d.startswith(prefix + ".") for d in dirty)
 
     def reset_parameter(self, path: PathKey) -> None:
-        keys = _split(path)
+        keys = list(_split(path))
+        if not keys:
+            raise ValueError("empty path")
         snap = get_path(self.preset_snapshot, keys, default=None)
         if snap is None and get_path(self.preset_snapshot, keys[:-1] if keys else []) is None:
             parent = get_path(self.config, keys[:-1]) if len(keys) > 1 else self.config

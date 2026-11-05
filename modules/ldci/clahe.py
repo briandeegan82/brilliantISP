@@ -333,3 +333,97 @@ class CLAHE:
         out_ceh[:, :, 2] = in_yuv[:, :, 2]
 
         return out_ceh
+
+
+def apply_luma(
+    luma: np.ndarray,
+    *,
+    scale: float,
+    wind: int,
+    clip_limit: float,
+    bins: int = 4096,
+) -> np.ndarray:
+    """Native plane CLAHE on a declared-scale luma plane.
+
+    ``luma`` is any real 2-D array in ``0..scale`` units (explicit scale,
+    never inferred). ``wind`` is the positive integer tile width,
+    ``clip_limit`` the nonnegative ratio-to-average cap, ``bins`` the
+    histogram resolution (4096 native, 256 allowed internally). Constant
+    input maps to itself in declared units; constant tiles get an
+    identity LUT. Output is checked float32 in the same units.
+    """
+    from util.luma import normalize_plane, restore_plane
+
+    y = normalize_plane(luma, scale=scale)
+    try:
+        wind_i = int(wind)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"wind must be a positive integer, got {wind!r}") from exc
+    if isinstance(wind, bool) or wind_i != wind or wind_i <= 0:
+        raise ValueError(f"wind must be a positive integer, got {wind!r}")
+    try:
+        clip_f = float(clip_limit)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"clip_limit must be a finite nonnegative number, got {clip_limit!r}") from exc
+    if isinstance(clip_limit, bool) or not math.isfinite(clip_f) or clip_f < 0:
+        raise ValueError(f"clip_limit must be a finite nonnegative number, got {clip_limit!r}")
+    try:
+        bins_i = int(bins)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"bins must be 256 or 4096, got {bins!r}") from exc
+    if isinstance(bins, bool) or bins_i != bins or bins_i not in (256, 4096):
+        raise ValueError(f"bins must be 256 or 4096, got {bins!r}")
+    wind, clip_limit, bins = wind_i, clip_f, bins_i
+    if float(y.min()) == float(y.max()):
+        return restore_plane(y, scale=scale)
+    h, w = y.shape
+    row_pad = (-h) % wind
+    col_pad = (-w) % wind
+    pads = ((row_pad // 2, row_pad - row_pad // 2), (col_pad // 2, col_pad - col_pad // 2))
+    yp = np.pad(y, pads, mode="reflect")
+    ph, pw = yp.shape
+    th, tw = ph // wind, pw // wind
+    hist_idx = np.floor(np.clip(yp * (bins - 1) + 0.5, 0, bins - 1)).astype(np.int64)
+    area = wind * wind
+    cap = clip_limit * area / bins
+    prior = 256.0 / bins
+    identity = np.linspace(0.0, 1.0, bins)
+    luts = np.empty((th, tw, bins), dtype=np.float64)
+    for ty in range(th):
+        for tx in range(tw):
+            tile = yp[ty * wind:(ty + 1) * wind, tx * wind:(tx + 1) * wind]
+            if float(tile.min()) == float(tile.max()):
+                luts[ty, tx] = identity
+                continue
+            counts = np.bincount(
+                hist_idx[ty * wind:(ty + 1) * wind, tx * wind:(tx + 1) * wind].ravel(),
+                minlength=bins,
+            ).astype(np.float64)
+            kept = np.minimum(counts, cap)
+            excess = area - float(kept.sum())
+            luts[ty, tx] = np.cumsum(kept + excess / bins + prior) / (area + 256)
+    cy = np.clip((np.arange(ph) + 0.5) / wind - 0.5, 0.0, th - 1)
+    cx = np.clip((np.arange(pw) + 0.5) / wind - 0.5, 0.0, tw - 1)
+    y_i = np.floor(cy).astype(np.int64)
+    x_i = np.floor(cx).astype(np.int64)
+    y_j = np.minimum(y_i + 1, th - 1)
+    x_j = np.minimum(x_i + 1, tw - 1)
+    fy = np.clip(cy - y_i, 0.0, 1.0)
+    fx = np.clip(cx - x_i, 0.0, 1.0)
+    pos = np.clip(yp * (bins - 1), 0.0, bins - 1)
+    ilo = np.floor(pos).astype(np.int64)
+    ihi = np.minimum(ilo + 1, bins - 1)
+    frac = pos - ilo
+    out = np.zeros((ph, pw), dtype=np.float64)
+    for ty_i, tx_i, wy, wx in (
+        (y_i[:, None], x_i[None, :], 1 - fy, 1 - fx),
+        (y_i[:, None], x_j[None, :], 1 - fy, fx),
+        (y_j[:, None], x_i[None, :], fy, 1 - fx),
+        (y_j[:, None], x_j[None, :], fy, fx),
+    ):
+        lo = luts[ty_i, tx_i, ilo]
+        hi = luts[ty_i, tx_i, ihi]
+        out += (wy[:, None] * wx[None, :]) * (lo + frac * (hi - lo))
+    top, bottom, left, right = pads[0][0], pads[0][1], pads[1][0], pads[1][1]
+    cropped = out[top:ph - bottom if bottom else ph, left:pw - right if right else pw]
+    return restore_plane(cropped, scale=scale)

@@ -40,8 +40,8 @@ class DeadPixelCorrection:
         self.parm_dpc = parm_dpc
         self.is_progress = platform["disable_progress_bar"]
         self.is_leave = platform["leave_pbar_string"]
-        # Use hdr_bit_depth for HDR pipelines to avoid truncation
-        self.bpp = self.sensor_info.get("hdr_bit_depth", self.sensor_info["bit_depth"])
+        # Declared sensor bit depth (pre-decompanding range)
+        self.bpp = self.sensor_info.get("bit_depth", 16)
         self.threshold = self.parm_dpc["dp_threshold"]
         self.is_debug = self.parm_dpc["is_debug"]
         self.is_save = parm_dpc["is_save"]

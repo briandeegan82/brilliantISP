@@ -10,7 +10,7 @@ Author: Brian Deegan (via AI)
 import numpy as np
 from scipy.ndimage import convolve, correlate
 
-from util.isp_types import DemosaicMasks, RawBayerImage
+from util.isp_types import BayerImage, DemosaicMasks
 
 
 class LMMSEDemosaic:
@@ -26,7 +26,7 @@ class LMMSEDemosaic:
     This produces excellent quality with optimal MSE properties.
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]
         self.height, self.width = self.img.shape
@@ -223,7 +223,7 @@ class LMMSEDemosaicOptimized:
     Uses larger windows and more sophisticated correlation modeling.
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]
 
@@ -395,7 +395,7 @@ class LMMSEDemosaicFast:
     Trades some quality for speed while maintaining LMMSE principles.
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = np.asarray(raw_in, dtype=np.float32)
         self.masks = [m.astype(np.float32) for m in masks]
         self.window_size = 3  # Smaller window for speed

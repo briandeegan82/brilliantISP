@@ -30,6 +30,7 @@ companding:
   pedestal: 0
   companded: true
   companded_pin:
+  - 0
   - 100
   - 175
   - 308
@@ -48,6 +49,7 @@ companding:
   - 3759
   - 4095
   companded_pout:
+  - 0
   - 100
   - 212
   - 450
@@ -57,13 +59,13 @@ companding:
   - 9106
   - 19313
   - 40963
-  - 87907
+  - 86883
   - 184279
   - 390856
   - 829005
   - 1758320
   - 3729396
-  - 7929775
+  - 7910050
   - 16777215
   is_save: false
 crop:

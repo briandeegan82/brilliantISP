@@ -9,9 +9,13 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 
 
 import time
+from typing import cast
+
+import numpy as np
 from modules.bayer_noise_reduction.joint_bf import JointBF as JBF
-from util.isp_types import BayerNoiseReductionConfig, PlatformConfig, RawBayerImage, SensorInfo
+from util.isp_types import BayerImage, BayerNoiseReductionConfig, Float32Image, PlatformConfig, RawBayerImage, SensorInfo
 from util.utils import save_output_array
+from util.native_array import as_float32
 
 # Try to import GPU-accelerated version
 try:
@@ -29,10 +33,11 @@ class BayerNoiseReduction:
 
     def __init__(
         self,
-        img: RawBayerImage,
+        img: BayerImage,
         sensor_info: SensorInfo,
         parm_bnr: BayerNoiseReductionConfig,
         platform: PlatformConfig,
+        cpu_only: bool = False,
     ) -> None:
         self.img = img
         self.enable = parm_bnr["is_enable"]
@@ -42,13 +47,14 @@ class BayerNoiseReduction:
         self.is_leave = platform["leave_pbar_string"]
         self.is_save = parm_bnr["is_save"]
         self.platform = platform
+        self.cpu_only = cpu_only
 
         # Initialize debug logger
         self.logger = get_debug_logger("BayerNoiseReduction", config=self.platform)
 
         # Check if GPU acceleration should be used
         self.use_gpu = False
-        if GPU_VERSION_AVAILABLE:
+        if GPU_VERSION_AVAILABLE and not cpu_only:
             try:
                 from util.gpu_utils import is_gpu_available, should_use_gpu
 
@@ -71,7 +77,34 @@ class BayerNoiseReduction:
             jbf = JBF(self.img, self.sensor_info, self.parm_bnr, self.platform)
             bnr_out_img = jbf.apply_jbf()
 
-        return bnr_out_img
+        return cast(RawBayerImage, bnr_out_img)
+
+    def compute_linear(self) -> Float32Image:
+        """Native linear path: CPU JointBF, finite float32 code output.
+
+        Odd shapes are reflect-padded only on the bottom/right to the next
+        even size (full CFA cells), filtered, and cropped back. Frames
+        with a dimension below 2 bypass filtering unchanged.
+        """
+        src = np.asarray(self.img)
+        if src.ndim != 2 or src.size == 0:
+            raise ValueError(f"BNR input must be a nonempty 2-D frame, got {src.shape}")
+        if not np.all(np.isfinite(src)):
+            raise ValueError("BNR input must be finite")
+        if not self.enable:
+            return as_float32(src, name="bayer_noise_reduction")
+        h, w = src.shape
+        if h < 2 or w < 2:
+            return as_float32(src, name="bayer_noise_reduction")
+        ph, pw = h + (h % 2), w + (w % 2)
+        if (ph, pw) != (h, w):
+            src = np.pad(src.astype(np.float64), ((0, ph - h), (0, pw - w)), "reflect")
+        sensor = dict(self.sensor_info)
+        sensor["height"], sensor["width"] = src.shape
+        jbf = JBF(src, cast(SensorInfo, sensor), self.parm_bnr, self.platform)
+        out = np.asarray(jbf.apply_jbf(preserve_float=True), dtype=np.float64)
+        out = out[:h, :w]
+        return as_float32(out, name="bayer_noise_reduction")
 
     def save(self) -> None:
         """
@@ -101,4 +134,4 @@ class BayerNoiseReduction:
             self.img = bnr_out
 
         self.save()
-        return self.img
+        return cast(RawBayerImage, self.img)

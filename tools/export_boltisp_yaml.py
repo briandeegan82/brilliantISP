@@ -129,9 +129,66 @@ def _apply_lsc_table_generation(
             lsc.pop(k2_key, None)
 
 
-def _apply_tonemap_translation(cfg: dict[str, Any]) -> None:
+def _apply_canonical_tonemap_translation(
+    cfg: dict[str, Any], tone_mapping: dict[str, Any], warnings: list[str]
+) -> None:
+    from modules.tone_mapping.registry import resolve_tone_mapping
+
+    resolved = resolve_tone_mapping(cfg)
+    spec = resolved.spec
+    operator = spec.operator
+    params = dict(spec.parameters)
+    warnings.append(
+        "canonical tone_mapping export is a nearest-key approximation; "
+        "no external parity is claimed"
+    )
+    if spec.backend not in ("float", "lut"):
+        warnings.append(
+            f"backend {spec.backend!r} has no boltISP equivalent; output "
+            "approximates the float path"
+        )
+    if resolved.placement != "post_ccm":
+        warnings.append(
+            "placement pre_demosaic cannot be translated; boltISP applies "
+            "tone mapping post-CCM"
+        )
+    if operator == "hable":
+        hdr_tm = cfg.get("hdr_tone_mapping")
+        if not isinstance(hdr_tm, dict):
+            hdr_tm = {}
+            cfg["hdr_tone_mapping"] = hdr_tm
+        hdr_tm["operator"] = "hable"
+        hdr_tm["hable_exposure_bias"] = float(params["exposure_bias"])
+        hdr_tm["hable_white_point"] = float(params["white_point"])
+        hdr_tm["hable_hdr_scale"] = spec.domain_scale * (2.0 ** spec.exposure_ev)
+        hdr_tm["hable_normalize_output"] = bool(spec.normalize_output)
+        if spec.normalization == "per_frame":
+            warnings.append(
+                "per_frame normalization cannot translate to tiled boltISP; "
+                "hable_use_normalization set False as legacy"
+            )
+            hdr_tm["hable_use_normalization"] = False
+        if spec.lut_domain != 16.0:
+            warnings.append(
+                "lut_domain has no boltISP equivalent and is not exported"
+            )
+        return
+    raise ValueError(
+        f"canonical tone_mapping.operator {operator!r} has no verified "
+        "boltISP translation; refusing to emit a misleading config"
+    )
+
+
+def _apply_tonemap_translation(
+    cfg: dict[str, Any], warnings: list[str] | None = None
+) -> None:
     tone_mapping = cfg.get("tone_mapping")
     if not isinstance(tone_mapping, dict):
+        return
+    if "operator" in tone_mapping:
+        _apply_canonical_tonemap_translation(
+            cfg, tone_mapping, warnings if warnings is not None else []
+        )
         return
     tone_mapper = tone_mapping.get("tone_mapper")
     if not isinstance(tone_mapper, str):
@@ -208,8 +265,18 @@ def export_bolt_yaml(
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         raise ValueError(f"Expected mapping at YAML root: {input_path}")
+    version = data.get("schema_version")
+    if isinstance(version, int) and not isinstance(version, bool) and version == 2:
+        raise ValueError(
+            "boltISP export does not support schema_version 2 configs: export "
+            "the original v1 source preset instead; native v2 color/precision "
+            "output is unsupported here and no parity claim is made.")
 
-    _apply_tonemap_translation(data)
+    warnings_list: list[str] = []
+    _apply_tonemap_translation(data, warnings_list)
+    import warnings as _w
+    for w in warnings_list:
+        _w.warn(w, UserWarning, stacklevel=2)
     _apply_lsc_table_generation(data, lsc_grid_width, lsc_grid_height)
 
     rendered = "\n".join(_render_node(data)) + "\n"

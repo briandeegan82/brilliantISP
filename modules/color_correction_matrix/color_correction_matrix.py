@@ -10,8 +10,33 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 import time
 import numpy as np
 
-from util.isp_types import ColorCorrectionMatrixConfig, PlatformConfig, RGBImage, SensorInfo, UInt16Image
+from util.isp_types import ColorCorrectionMatrixConfig, Float32Image, PlatformConfig, RGBImage, SensorInfo, UInt16Image
 from util.utils import save_output_array
+from util.native_array import as_float32
+
+
+def _matrix_linear(img: np.ndarray, parm_ccm: ColorCorrectionMatrixConfig) -> np.ndarray:
+    """Normalized RGB -> float64 matrix application, no clip/rescale.
+
+    Shared by the legacy and optimized wrappers; uses the same
+    O*A => A = ccm convention. Coefficients must be finite 3x3 rows.
+    """
+    f = np.asarray(img, dtype=np.float64)
+    if f.ndim != 3 or f.shape[-1] != 3 or not np.all(np.isfinite(f)):
+        raise ValueError(
+            f"CCM compute_linear requires a finite HWC3 array, got {f.shape}"
+        )
+    rows = [
+        np.asarray(parm_ccm["corrected_red"], dtype=np.float64),
+        np.asarray(parm_ccm["corrected_green"], dtype=np.float64),
+        np.asarray(parm_ccm["corrected_blue"], dtype=np.float64),
+    ]
+    mat = np.stack(rows)
+    if mat.shape != (3, 3) or not np.all(np.isfinite(mat)):
+        raise ValueError("CCM matrix must be finite 3x3 rows")
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        out = np.matmul(f.reshape((-1, 3)), mat.transpose()).reshape(f.shape)
+    return out
 
 
 class ColorCorrectionMatrix:
@@ -31,7 +56,7 @@ class ColorCorrectionMatrix:
         # CCM operates on the 16-bit linear RGB produced by demosaic, so normalise
         # by pipeline_rgb_bit_depth (typically 16 → 65535), not output_bit_depth (8).
         self.pipeline_bits = sensor_info.get("pipeline_rgb_bit_depth", 16)
-        self.output_bit_depth = sensor_info["output_bit_depth"]
+        self.output_bit_depth = sensor_info.get("output_bit_depth", 16)
         self.ccm_mat = None
         self.is_save = parm_ccm["is_save"]
         self.platform = platform
@@ -67,6 +92,17 @@ class ColorCorrectionMatrix:
         out = (out * pipeline_max).astype(np.uint16)
 
         return out
+
+    def compute_linear(self) -> Float32Image:
+        """Native linear path on normalized RGB: matrix only, no clip/rescale.
+
+        Disabled is an exact identity pass and never reads the matrix
+        parameters.
+        """
+        if not self.enable:
+            return as_float32(self.img, name="color_correction_matrix")
+        out = _matrix_linear(self.img, self.parm_ccm)
+        return as_float32(out, name="color_correction_matrix")
 
     def save(self) -> None:
         """

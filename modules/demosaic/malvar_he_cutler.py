@@ -9,7 +9,7 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 import numpy as np
 from scipy.signal import correlate2d
 
-from util.isp_types import DemosaicMasks, RawBayerImage
+from util.isp_types import BayerImage, DemosaicMasks
 
 
 class Malvar:
@@ -17,7 +17,7 @@ class Malvar:
     CFA interpolation or Demosaicing
     """
 
-    def __init__(self, raw_in: RawBayerImage, masks: DemosaicMasks) -> None:
+    def __init__(self, raw_in: BayerImage, masks: DemosaicMasks) -> None:
         self.img = raw_in
         self.masks = masks
 

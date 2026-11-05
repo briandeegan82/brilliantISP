@@ -145,5 +145,11 @@ in_frames/
 # Calibration GUI working sessions
 tmp/gui_session/
 
+tmp/modernization_m0/
+
+tmp/gpu_validation/
+
+.venv-gpu/
+
 # Local scratch/debug images
 .scratch_triton/

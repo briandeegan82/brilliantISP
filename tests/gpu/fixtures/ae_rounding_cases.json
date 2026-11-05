@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "case": "nearest_gain_midpoint_mean_division",
+  "input": {
+    "shape": [1, 10, 3],
+    "dtype": "float32",
+    "white_pixels": 7,
+    "black_pixels": 3,
+    "center_illuminance": 0.5,
+    "histogram_skewness": 0.1,
+    "target_luminance": 1.05,
+    "current_gain_index": 0,
+    "gain_array": [1.0, 2.0]
+  },
+  "cpu_reference": {
+    "feedback": 1,
+    "meter_average": 0.7,
+    "suggested_gain_index": 1
+  },
+  "failed_torch_mean_prototype": {
+    "meter_average": 0.7000000000000001,
+    "suggested_gain_index": 0
+  },
+  "corrected_sum_device_division_prototype": {
+    "meter_average": 0.7,
+    "suggested_gain_index": 1
+  }
+}
