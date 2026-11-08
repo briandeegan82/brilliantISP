@@ -106,6 +106,8 @@ from modules.digital_gain.digital_gain import DigitalGain as DG
 from modules.lens_shading_correction.lens_shading_correction import LensShadingCorrection as LSC
 from modules.bayer_noise_reduction.bayer_noise_reduction import BayerNoiseReduction as BNR
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
+from modules.auto_white_balance import temporal as awb_temporal
+from modules.auto_exposure import smooth_control as smooth_ae
 from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
 from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
 from modules.demosaic.demosaic import Demosaic
@@ -735,7 +737,16 @@ class BrilliantISP:
         # =====================================================================
         # Digital Gain (receives OECF output per pipeline order: PWC -> OECF -> DG)
         # Digital Gain
+        from util.native_array import as_float32
+        smooth_gain = getattr(self, "_smooth_gain", None)
+
         def _dg() -> tuple[np.ndarray, int]:
+            if smooth_gain is not None:
+                arr = np.asarray(self.parm_dga["gain_array"], dtype=np.float64)
+                nearest = int(np.argmin(np.abs(np.log2(arr) - np.log2(smooth_gain))))
+                with np.errstate(over="ignore", invalid="ignore"):
+                    scaled = np.asarray(oecf_raw, dtype=np.float64) * float(smooth_gain)
+                return as_float32(scaled, name="digital_gain"), nearest
             config = cast(DigitalGainConfig, dict(self.parm_dga))
             config["ae_feedback"] = None
             config["current_gain"] = int(self.parm_dga["current_gain"]) if gain_index is None else gain_index
@@ -771,13 +782,19 @@ class BrilliantISP:
         def _awb() -> Any:
             awb = AWB(bnr_raw, sensor_info, self.parm_awb, self.parm_wbc)
             hint = self.processing_state.previous_awb_gains if self.processing_state else None
-            self.last_awb_input_gain = (
-                float(self.parm_dga["gain_array"][self.dga_current_gain])
-                if self.parm_dga.get("is_enable", True) else 1.0
-            )
+            if smooth_gain is not None:
+                self.last_awb_input_gain = float(smooth_gain)
+            else:
+                self.last_awb_input_gain = (
+                    float(self.parm_dga["gain_array"][self.dga_current_gain])
+                    if self.parm_dga.get("is_enable", True) else 1.0
+                )
             gains = awb.compute_gains(fallback_gains=hint, input_gain=self.last_awb_input_gain)
             self.last_awb_status = awb.last_status
             self.last_awb_count = awb.sample_count
+            self.last_awb_raw_estimate = (float(gains[0]), float(gains[1]))
+            if awb.last_status == "estimated" and awb_temporal.is_active(self.parm_awb):
+                gains = awb_temporal.filter_gains(gains, hint, self.parm_awb, input_gain=self.last_awb_input_gain)
             return gains
 
         self.awb_gains = cast(
@@ -1786,6 +1803,21 @@ class BrilliantISP:
                 "Advanced pre-demosaic tone mapping enabled: extra CPU branch; "
                 "color fidelity limitations apply")
 
+        smooth_mode = ae_enabled and dg_auto and bool(self.parm_ae.get("smooth_control", False))
+        smooth_params = smooth_ae.SmoothAEParams.from_config(self.parm_ae) if smooth_mode else None
+        smooth_desired: float | None = None
+        self._smooth_gain = None
+        if smooth_mode:
+            max_passes = 2
+            prev_gain = hint_state.ae_gain if hint_state is not None else None
+            self._smooth_gain = float(prev_gain) if prev_gain is not None else float(self.parm_dga["gain_array"][gain_idx])
+            smooth_linear = not bool(self.parm_bnr.get("is_enable", False))
+
+            def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
+                if not resolved.spec.enabled:
+                    return y
+                return np.asarray(map_native(y, config=resolved.spec), dtype=np.float64)
+
         for ae_pass in range(max_passes):
             ae_passes = ae_pass + 1
             wb_code = self._run_gain_through_white_balance(oecf_raw, ae_pass=ae_pass, gain_index=gain_idx)
@@ -1817,6 +1849,29 @@ class BrilliantISP:
             ae = AE(ae_rgb, cast(SensorInfo, p_sensor), self.parm_ae, meter_domain="scene_linear_rgb")
             fb = self._run_stage("auto_exposure", lambda a=ae: a.get_exposure_feedback(), ae_pass=ae_pass)
             self.ae_feedback = fb
+
+            if smooth_mode and smooth_params is not None:
+                applied = float(self._smooth_gain)
+                arr = np.log2(np.asarray(self.parm_dga["gain_array"], dtype=np.float64))
+                if ae_pass > 0:
+                    ae_stop = "smooth_rerun"
+                    suggested = next_idx = int(np.argmin(np.abs(arr - np.log2(applied))))
+                    break
+                y_unity = smooth_ae.scene_luminance(rgb_linear, applied, smooth_params.meter_stride)
+                smooth_desired = smooth_ae.solve_gain(y_unity, _smooth_tone_map, smooth_params)
+                prev = hint_state.ae_gain if hint_state is not None else None
+                new_gain = smooth_ae.next_gain(prev, smooth_desired, smooth_params)
+                self._smooth_gain = new_gain
+                suggested = next_idx = int(np.argmin(np.abs(arr - np.log2(new_gain))))
+                ratio = new_gain / applied
+                if ratio == 1.0 or smooth_linear:
+                    if ratio != 1.0:
+                        wb_code = as_float32(np.asarray(wb_code, dtype=np.float64) * ratio, name="white_balance")
+                        rgb_linear = np.asarray(rgb_linear, dtype=np.float64) * ratio
+                        self.current_frame = as_float32(wb_code, name="current_frame")
+                    ae_stop = "smooth"
+                    break
+                continue
 
             suggested = gain_idx
             if ae_enabled and ae.last_meter_average is not None and dg_auto:
@@ -1907,6 +1962,21 @@ class BrilliantISP:
                 return np.asarray(adjust_saturation(m, float(self.parm_cse["saturation_gain"]), matrix="bt709"))
             return np.asarray(m)
         mapped = np.asarray(self._run_stage("saturation", _saturation), dtype=np.float64)
+
+        # Opt-in luminance-preserving highlight gamut compression: pull channels
+        # that exceed display white toward luminance instead of hard-clipping.
+        tm_section = c_yaml.get("tone_mapping", {})
+        if bool(tm_section.get("gamut_compress", False)):
+            white = float(tm_section.get("gamut_compress_peak", 1.0))
+            if not 0.0 < white <= 1.0:
+                raise ValueError("tone_mapping.gamut_compress_peak must be in (0, 1]")
+
+            def _gamut_compress(m=mapped) -> np.ndarray:
+                y = np.clip(luminance(m, matrix="bt709", dtype=np.float64), 0.0, white)[..., None]
+                peak = np.max(m, axis=-1, keepdims=True)
+                t = np.where(peak > white, (white - y) / np.maximum(peak - y, 1e-12), 1.0)
+                return y + np.clip(t, 0.0, 1.0) * (m - y)
+            mapped = np.asarray(self._run_stage("gamut_compress", _gamut_compress), dtype=np.float64)
 
         # ---------------------------------------------------------------
         # Output spec + luma/display blocks + scale
@@ -2018,6 +2088,14 @@ class BrilliantISP:
             "linear_reference_code_max": declared_max,
             "next_digital_gain_index": int(next_idx),
         }
+        if self._smooth_gain is not None:
+            self.last_feedback.update({
+                "ae_gain": float(self._smooth_gain),
+                "ae_next_gain": float(self._smooth_gain),
+                "ae_desired_gain": smooth_desired,
+            })
+        if getattr(self, "last_awb_raw_estimate", None) is not None and awb_temporal.is_active(self.parm_awb):
+            self.last_feedback["awb_raw_estimate"] = self.last_awb_raw_estimate
 
         # ---------------------------------------------------------------
         # Explicit writer (only when options.save_outputs or facade default,

@@ -171,5 +171,7 @@ def process_frame(
                 else int(isp.dga_current_gain)
             )
         state.ae_history = (*state.ae_history, isp.ae_feedback)[-AE_HISTORY_LIMIT:]
+        if feedback.get("ae_next_gain") is not None:
+            state.ae_gain = float(feedback["ae_next_gain"])
 
     return result
