@@ -1858,7 +1858,10 @@ class BrilliantISP:
                     suggested = next_idx = int(np.argmin(np.abs(arr - np.log2(applied))))
                     break
                 y_unity = smooth_ae.scene_luminance(rgb_linear, applied, smooth_params.meter_stride)
-                smooth_desired = smooth_ae.solve_gain(y_unity, _smooth_tone_map, smooth_params)
+                peak_unity = (smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
+                              if smooth_params.max_clip_fraction < 1.0 else None)
+                smooth_desired = smooth_ae.solve_gain(y_unity, _smooth_tone_map, smooth_params,
+                                                      peak_unity=peak_unity)
                 prev = hint_state.ae_gain if hint_state is not None else None
                 new_gain = smooth_ae.next_gain(prev, smooth_desired, smooth_params)
                 self._smooth_gain = new_gain

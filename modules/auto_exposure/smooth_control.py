@@ -28,6 +28,11 @@ class SmoothAEParams:
     gain_max: float = 16384.0
     meter_stride: int = 8
     highlight_clip: float = 1.0
+    low_light_target_stops: float = 0.0
+    low_light_gain_range: tuple[float, float] = (1e4, 1e5)
+    clip_level: float = 0.98
+    max_clip_fraction: float = 1.0
+    clip_max_backoff_stops: float = 1.0
 
     @classmethod
     def from_config(cls, parm_ae: Mapping[str, Any]) -> "SmoothAEParams":
@@ -42,10 +47,19 @@ class SmoothAEParams:
             gain_max=float(parm_ae.get("gain_max", d.gain_max)),
             meter_stride=int(parm_ae.get("meter_stride", d.meter_stride)),
             highlight_clip=float(parm_ae.get("highlight_clip", d.highlight_clip)),
+            low_light_target_stops=float(parm_ae.get("low_light_target_stops", d.low_light_target_stops)),
+            low_light_gain_range=tuple(float(v) for v in parm_ae.get("low_light_gain_range", d.low_light_gain_range)),
+            clip_level=float(parm_ae.get("clip_level", d.clip_level)),
+            max_clip_fraction=float(parm_ae.get("max_clip_fraction", d.max_clip_fraction)),
+            clip_max_backoff_stops=float(parm_ae.get("clip_max_backoff_stops", d.clip_max_backoff_stops)),
         )
+        g0, g1 = out.low_light_gain_range
         if not (0 < out.output_target < 1 and out.time_constant_s >= 0 and out.deadband_stops >= 0
                 and out.max_rate_stops_per_s > 0 and out.frame_rate > 0
-                and 0 < out.gain_min < out.gain_max and out.meter_stride >= 1):
+                and 0 < out.gain_min < out.gain_max and out.meter_stride >= 1
+                and out.low_light_target_stops >= 0 and 0 < g0 < g1
+                and 0 < out.clip_level <= 1 and 0 < out.max_clip_fraction <= 1
+                and out.clip_max_backoff_stops >= 0):
             raise ValueError(f"invalid smooth AE parameters: {out}")
         return out
 
@@ -60,6 +74,16 @@ class SmoothAEParams:
     def max_step_stops(self) -> float:
         return self.max_rate_stops_per_s / self.frame_rate
 
+    def target_at(self, gain: float) -> float:
+        """Output target, lowered by up to ``low_light_target_stops`` as total gain rises
+        through ``low_light_gain_range`` (log-linear), so noise-limited scenes are not
+        forced to full mid-grey."""
+        if self.low_light_target_stops == 0:
+            return self.output_target
+        g0, g1 = (math.log2(v) for v in self.low_light_gain_range)
+        w = min(max((math.log2(gain) - g0) / (g1 - g0), 0.0), 1.0)
+        return self.output_target * 2.0 ** (-self.low_light_target_stops * w)
+
 
 def scene_luminance(rgb_linear: np.ndarray, applied_gain: float, stride: int) -> np.ndarray:
     """Subsampled unity-gain scene-linear BT.709 luminance (nonnegative)."""
@@ -68,32 +92,54 @@ def scene_luminance(rgb_linear: np.ndarray, applied_gain: float, stride: int) ->
     return np.maximum(y, 0.0) / float(applied_gain)
 
 
+def scene_peak(rgb_linear: np.ndarray, applied_gain: float, stride: int) -> np.ndarray:
+    """Subsampled unity-gain per-pixel max channel (nonnegative)."""
+    sub = np.asarray(rgb_linear, dtype=np.float64)[::stride, ::stride]
+    return np.maximum(sub.max(axis=-1), 0.0) / float(applied_gain)
+
+
 def solve_gain(
     y_unity: np.ndarray,
     tone_map: Callable[[np.ndarray], np.ndarray],
     p: SmoothAEParams,
     iterations: int = 18,
+    peak_unity: np.ndarray | None = None,
 ) -> float:
-    """Gain g (log-bisection) with mean(min(TM(g*y), clip)) == output_target."""
+    """Gain g (log-bisection) with mean(min(TM(g*y), clip)) == target_at(g), capped so the
+    fraction of tone-mapped pixels at or above ``clip_level`` stays within ``max_clip_fraction``
+    (highlight protection backs off at most ``clip_max_backoff_stops``)."""
     if y_unity.size == 0 or not np.any(y_unity > 0):
         return p.gain_max
 
-    def out_mean(g: float) -> float:
+    def excess(g: float) -> float:
         mapped = np.asarray(tone_map(y_unity * g), dtype=np.float64)
-        return float(np.mean(np.clip(mapped, 0.0, p.highlight_clip)))
+        return float(np.mean(np.clip(mapped, 0.0, p.highlight_clip))) - p.target_at(g)
 
-    lo, hi = math.log2(p.gain_min), math.log2(p.gain_max)
-    if out_mean(2.0 ** hi) <= p.output_target:
-        return p.gain_max
-    if out_mean(2.0 ** lo) >= p.output_target:
-        return p.gain_min
-    for _ in range(iterations):
-        mid = 0.5 * (lo + hi)
-        if out_mean(2.0 ** mid) < p.output_target:
-            lo = mid
-        else:
-            hi = mid
-    return 2.0 ** (0.5 * (lo + hi))
+    def clipped(g: float) -> float:
+        mapped = np.asarray(tone_map(y_unity * g), dtype=np.float64)
+        if peak_unity is not None:
+            ratio = np.divide(mapped, y_unity * g, out=np.zeros_like(mapped), where=y_unity > 0)
+            mapped = np.maximum(mapped, peak_unity * g * ratio)
+        return float(np.mean(mapped >= p.clip_level)) - p.max_clip_fraction
+
+    def bisect(f: Callable[[float], float]) -> float:
+        lo, hi = math.log2(p.gain_min), math.log2(p.gain_max)
+        if f(2.0 ** hi) <= 0:
+            return p.gain_max
+        if f(2.0 ** lo) >= 0:
+            return p.gain_min
+        for _ in range(iterations):
+            mid = 0.5 * (lo + hi)
+            if f(2.0 ** mid) < 0:
+                lo = mid
+            else:
+                hi = mid
+        return 2.0 ** (0.5 * (lo + hi))
+
+    gain = bisect(excess)
+    if p.max_clip_fraction < 1.0 and clipped(gain) > 0:
+        gain = max(bisect(clipped), gain * 2.0 ** -p.clip_max_backoff_stops)
+    return gain
 
 
 def next_gain(previous: float | None, desired: float, p: SmoothAEParams) -> float:

@@ -95,3 +95,34 @@ def test_awb_low_light_prior_blend():
     r, b = temporal.filter_gains((1.0, 3.0), None, parm, input_gain=1000.0)
     assert r == pytest.approx(math.sqrt(2.0)) and b == pytest.approx(math.sqrt(4.5))
     assert temporal.low_light_weight(1e6, {}) == 0.0
+
+
+def test_low_light_target_rolloff_lowers_night_target_only():
+    p = sc.SmoothAEParams(output_target=0.16, low_light_target_stops=1.0, low_light_gain_range=(1e3, 1e4))
+    assert p.target_at(100.0) == pytest.approx(0.16)
+    assert p.target_at(math.sqrt(1e7)) == pytest.approx(0.16 * 2 ** -0.5)
+    assert p.target_at(1e6) == pytest.approx(0.08)
+    y = np.full(64, 1e-5)
+    g = sc.solve_gain(y, lambda v: v, p)
+    assert g * 1e-5 == pytest.approx(p.target_at(g), rel=1e-3)
+    assert g < 0.16 / 1e-5
+
+
+def test_clip_fraction_cap_limits_gain():
+    y = np.concatenate([np.full(90, 0.01), np.full(10, 0.5)])
+    free = sc.solve_gain(y, lambda v: np.minimum(v, 1.0), sc.SmoothAEParams(output_target=0.18, gain_max=1e3))
+    p = sc.SmoothAEParams(output_target=0.18, gain_max=1e3, clip_level=0.98, max_clip_fraction=0.05,
+                          clip_max_backoff_stops=10.0)
+    capped = sc.solve_gain(y, lambda v: np.minimum(v, 1.0), p)
+    assert free * 0.5 >= 0.98
+    assert capped * 0.5 < 0.98
+    with pytest.raises(ValueError):
+        sc.SmoothAEParams.from_config({"max_clip_fraction": 0.0})
+
+
+def test_clip_cap_backoff_is_bounded():
+    y = np.concatenate([np.full(90, 0.01), np.full(10, 0.5)])
+    tm = lambda v: np.minimum(v, 1.0)  # noqa: E731
+    free = sc.solve_gain(y, tm, sc.SmoothAEParams(output_target=0.18, gain_max=1e3))
+    p = sc.SmoothAEParams(output_target=0.18, gain_max=1e3, max_clip_fraction=0.05, clip_max_backoff_stops=0.5)
+    assert sc.solve_gain(y, tm, p) == pytest.approx(free * 2 ** -0.5, rel=1e-6)
