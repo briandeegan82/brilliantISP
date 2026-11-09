@@ -122,3 +122,26 @@ def map_native(
         return as_float32(out, name="native_rgb_tone_map")
     except ValueError as exc:
         raise ToneMappingError(str(exc)) from exc
+
+
+def map_native_max_rgb(image: np.ndarray, *, config: ToneMappingSpec) -> np.ndarray:
+    """Apply the same global curve to max(R, G, B) and rescale RGB by that ratio.
+
+    Hue-preserving; unlike luminance recombination, saturated colours cannot push
+    a channel above the curve's output range.
+    """
+    if not config.enabled:
+        return image
+    rgb = _native_float_source(image).astype(np.float64)
+    if rgb.ndim != 3:
+        raise ToneMappingError("max_rgb tone mapping requires an HxWx3 RGB image")
+    norm = np.maximum(np.max(rgb, axis=-1), 0.0)
+    mapped_n = _map_plane(norm, config, None)
+    safe = np.where(norm > _RGB_Y_FLOOR, norm, 1.0)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        out = rgb * (mapped_n / safe)[..., None]
+    out[norm <= _RGB_Y_FLOOR] = 0.0
+    try:
+        return as_float32(out, name="native_max_rgb_tone_map")
+    except ValueError as exc:
+        raise ToneMappingError(str(exc)) from exc

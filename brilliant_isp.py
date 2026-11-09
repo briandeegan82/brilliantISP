@@ -1959,7 +1959,16 @@ class BrilliantISP:
                 pre_rgb, platform, cast(SensorInfo, p_sensor), self.parm_ccm).compute_linear())
             mapped = self._run_stage("tone_mapping_post", lambda: pre_ccm)
         else:
-            mapped = self._run_stage("tone_mapping_post", lambda: map_native(rgb_linear, config=resolved.spec))
+            rgb_norm = str(c_yaml.get("tone_mapping", {}).get("rgb_norm", "luminance"))
+            if rgb_norm not in ("luminance", "max_rgb"):
+                raise ValueError("tone_mapping.rgb_norm must be 'luminance' or 'max_rgb'")
+
+            def _tone_map_post() -> np.ndarray:
+                if rgb_norm == "max_rgb":
+                    from modules.tone_mapping.native import map_native_max_rgb
+                    return map_native_max_rgb(rgb_linear, config=resolved.spec)
+                return map_native(rgb_linear, config=resolved.spec)
+            mapped = self._run_stage("tone_mapping_post", _tone_map_post)
             self._save_native_tone_mapping_diagnostics(mapped, stage="tone_mapping_post", resolved=resolved)
         mapped = np.asarray(mapped, dtype=np.float64)
 
