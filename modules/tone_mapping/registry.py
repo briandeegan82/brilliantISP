@@ -537,6 +537,7 @@ def resolve_tone_mapping(full_config: Mapping[str, Any]) -> ResolvedToneMapping:
             "operator", "backend", "placement", "normalization", "exposure_ev",
             "domain_scale", "normalize_output", "parameters", "lut_domain", "lut_size",
             "is_enable", "is_save", "is_plot_curve", "tone_mapper", "tone_mapping_before_demosaic",
+            "gamut_compress", "gamut_compress_peak",
         }
         unknown = set(tm) - allowed
         if unknown:
