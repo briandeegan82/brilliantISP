@@ -1798,6 +1798,14 @@ class BrilliantISP:
         ae_rgb: np.ndarray | None = None
 
         resolved = resolve_tone_mapping(c_yaml)
+        aw_cfg = (c_yaml.get("tone_mapping", {}) or {}).get("adaptive_white")
+        tm_white = 1.0
+        if aw_cfg and hint_state is not None and getattr(hint_state, "tone_white", None):
+            tm_white = max(1.0, float(hint_state.tone_white))
+        tm_spec = resolved.spec if tm_white == 1.0 else dataclasses.replace(
+            resolved.spec, exposure_ev=resolved.spec.exposure_ev + float(np.log2(tm_white)))
+        self._tm_white: float | None = tm_white if aw_cfg else None
+        self._tm_white_next: float | None = None
         advanced_pre = self.tone_mapping_before_demosaic and resolved.spec.enabled
         if advanced_pre:
             self.logger.warning(
@@ -1817,7 +1825,7 @@ class BrilliantISP:
             def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
                 if not resolved.spec.enabled:
                     return y
-                return np.asarray(map_native(y, config=resolved.spec), dtype=np.float64)
+                return np.asarray(map_native(y / tm_white, config=tm_spec), dtype=np.float64)
 
         for ae_pass in range(max_passes):
             ae_passes = ae_pass + 1
@@ -1959,16 +1967,29 @@ class BrilliantISP:
                 pre_rgb, platform, cast(SensorInfo, p_sensor), self.parm_ccm).compute_linear())
             mapped = self._run_stage("tone_mapping_post", lambda: pre_ccm)
         else:
-            rgb_norm = str(c_yaml.get("tone_mapping", {}).get("rgb_norm", "luminance"))
-            if rgb_norm not in ("luminance", "max_rgb"):
-                raise ValueError("tone_mapping.rgb_norm must be 'luminance' or 'max_rgb'")
+            tm_yaml = c_yaml.get("tone_mapping", {})
+            rgb_norm = str(tm_yaml.get("rgb_norm", "luminance"))
+            if rgb_norm not in ("luminance", "max_rgb", "hybrid"):
+                raise ValueError("tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'hybrid'")
 
             def _tone_map_post() -> np.ndarray:
+                if rgb_norm == "hybrid":
+                    from modules.tone_mapping.native import map_native_hybrid
+                    desat = tm_yaml.get("near_white_desat")
+                    return map_native_hybrid(
+                        rgb_linear / tm_white, config=tm_spec,
+                        blend=tuple(tm_yaml.get("rgb_norm_blend", (0.75, 1.0))),
+                        desat=tuple(desat) if desat is not None else None)
                 if rgb_norm == "max_rgb":
                     from modules.tone_mapping.native import map_native_max_rgb
-                    return map_native_max_rgb(rgb_linear, config=resolved.spec)
-                return map_native(rgb_linear, config=resolved.spec)
+                    return map_native_max_rgb(rgb_linear / tm_white, config=tm_spec)
+                return map_native(rgb_linear / tm_white, config=tm_spec)
             mapped = self._run_stage("tone_mapping_post", _tone_map_post)
+            if aw_cfg:
+                from modules.tone_mapping import adaptive_white
+                self._tm_white_next = adaptive_white.next_white(
+                    tm_white if (hint_state is not None and getattr(hint_state, "tone_white", None)) else None,
+                    adaptive_white.desired_white(rgb_linear, aw_cfg), aw_cfg)
             self._save_native_tone_mapping_diagnostics(mapped, stage="tone_mapping_post", resolved=resolved)
         mapped = np.asarray(mapped, dtype=np.float64)
 
@@ -2110,6 +2131,10 @@ class BrilliantISP:
                 "ae_next_gain": float(self._smooth_gain),
                 "ae_desired_gain": smooth_desired,
             })
+        if getattr(self, "_tm_white", None) is not None:
+            self.last_feedback["tm_white"] = float(self._tm_white)
+            if self._tm_white_next is not None:
+                self.last_feedback["tm_white_next"] = float(self._tm_white_next)
         if getattr(self, "last_awb_raw_estimate", None) is not None and awb_temporal.is_active(self.parm_awb):
             self.last_feedback["awb_raw_estimate"] = self.last_awb_raw_estimate
 

@@ -64,6 +64,7 @@ class ProcessingState:
     digital_gain_index: int | None = None
     ae_history: tuple[int | None, ...] = ()
     ae_gain: float | None = None
+    tone_white: float | None = None
 
 
 @dataclass(frozen=True)

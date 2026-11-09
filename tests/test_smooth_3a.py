@@ -137,3 +137,23 @@ def test_solve_gain_uses_roi_weights():
     assert sc.solve_gain(y, lambda v: v, p) < g
     with pytest.raises(ValueError):
         sc.solve_gain(y, lambda v: v, p, weights=np.zeros(100))
+
+
+def test_awb_gain_locus_pulls_estimate_to_max_distance():
+    import math
+
+    from modules.auto_white_balance.temporal import filter_gains, project_to_locus
+
+    parm = {"gain_locus": [[2.0, 1.3], [1.2, 2.0]], "locus_max_distance": 0.05}
+    on = (math.exp(0.5 * (math.log(2.0) + math.log(1.2))), math.exp(0.5 * (math.log(1.3) + math.log(2.0))))
+    assert project_to_locus(*on, parm) == on
+    r, b = project_to_locus(1.0, 1.0, parm)
+    a, c = np.log([2.0, 1.3]), np.log([1.2, 2.0])
+    q = np.log([r, b])
+    seg = c - a
+    t = np.clip(np.dot(q - a, seg) / np.dot(seg, seg), 0, 1)
+    assert abs(np.linalg.norm(q - (a + t * seg)) - 0.05) < 1e-9
+    assert filter_gains((1.0, 1.0), None, parm) == (r, b)
+    import pytest
+    with pytest.raises(ValueError):
+        project_to_locus(1.0, 1.0, {"gain_locus": [[2.0, 1.3]]})

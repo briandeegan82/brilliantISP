@@ -173,5 +173,7 @@ def process_frame(
         state.ae_history = (*state.ae_history, isp.ae_feedback)[-AE_HISTORY_LIMIT:]
         if feedback.get("ae_next_gain") is not None:
             state.ae_gain = float(feedback["ae_next_gain"])
+        if feedback.get("tm_white_next") is not None:
+            state.tone_white = float(feedback["tm_white_next"])
 
     return result

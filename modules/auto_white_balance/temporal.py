@@ -8,6 +8,9 @@ Keys (``auto_white_balance``), all optional; absent keys keep legacy behaviour:
   low_light_prior: [r, b] gains the estimate is blended toward in low light
   low_light_gain_range: [g0, g1] applied digital gain where the blend weight
     ramps (log-linearly) from 0 to 1
+  gain_locus: [[r, b], ...] illuminant locus polyline (>= 2 points); with
+    locus_max_distance (log-gain units) the estimate is pulled to within that
+    distance of the polyline (applied before the box clamp)
 """
 
 from __future__ import annotations
@@ -30,7 +33,31 @@ def _range(parm: Mapping[str, Any], key: str) -> tuple[float, float] | None:
 
 def is_active(parm: Mapping[str, Any]) -> bool:
     return any(k in parm for k in ("r_gain_range", "b_gain_range", "time_constant_s", "max_rate_per_s",
-                                   "low_light_prior"))
+                                   "low_light_prior", "gain_locus"))
+
+
+def project_to_locus(r: float, b: float, parm: Mapping[str, Any]) -> tuple[float, float]:
+    pts = parm.get("gain_locus")
+    if pts is None:
+        return r, b
+    poly = np.log(np.asarray(pts, dtype=np.float64))
+    dmax = float(parm.get("locus_max_distance", 0.0))
+    if poly.ndim != 2 or poly.shape[0] < 2 or poly.shape[1] != 2 or not np.all(np.isfinite(poly)) or dmax < 0:
+        raise ValueError("auto_white_balance.gain_locus must be >= 2 positive [r, b] points; "
+                         "locus_max_distance >= 0")
+    q = np.array([math.log(r), math.log(b)])
+    best, best_d = q, math.inf
+    for a, c in zip(poly[:-1], poly[1:]):
+        seg = c - a
+        t = float(np.clip(np.dot(q - a, seg) / max(float(np.dot(seg, seg)), 1e-24), 0.0, 1.0))
+        foot = a + t * seg
+        d = float(np.linalg.norm(q - foot))
+        if d < best_d:
+            best, best_d = foot, d
+    if best_d <= dmax:
+        return r, b
+    out = best + (q - best) * (dmax / best_d)
+    return float(math.exp(out[0])), float(math.exp(out[1]))
 
 
 def low_light_weight(input_gain: float, parm: Mapping[str, Any]) -> float:
@@ -55,6 +82,7 @@ def filter_gains(
         pr, pb = (float(v) for v in parm["low_light_prior"])
         r = math.exp((1 - w) * math.log(r) + w * math.log(pr))
         b = math.exp((1 - w) * math.log(b) + w * math.log(pb))
+    r, b = project_to_locus(r, b, parm)
     rr, br = _range(parm, "r_gain_range"), _range(parm, "b_gain_range")
     if rr:
         r = float(np.clip(r, *rr))
