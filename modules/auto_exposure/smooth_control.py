@@ -104,23 +104,32 @@ def solve_gain(
     p: SmoothAEParams,
     iterations: int = 18,
     peak_unity: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
 ) -> float:
     """Gain g (log-bisection) with mean(min(TM(g*y), clip)) == target_at(g), capped so the
     fraction of tone-mapped pixels at or above ``clip_level`` stays within ``max_clip_fraction``
     (highlight protection backs off at most ``clip_max_backoff_stops``)."""
+    if weights is not None:
+        weights = np.asarray(weights, dtype=np.float64)
+        if weights.shape != y_unity.shape or not np.any(weights > 0):
+            raise ValueError("metering weights must match the meter shape and have positive mass")
+        y_unity = np.where(weights > 0, y_unity, 0.0)
     if y_unity.size == 0 or not np.any(y_unity > 0):
         return p.gain_max
 
+    def wmean(v: np.ndarray) -> float:
+        return float(np.average(v, weights=weights)) if weights is not None else float(np.mean(v))
+
     def excess(g: float) -> float:
         mapped = np.asarray(tone_map(y_unity * g), dtype=np.float64)
-        return float(np.mean(np.clip(mapped, 0.0, p.highlight_clip))) - p.target_at(g)
+        return wmean(np.clip(mapped, 0.0, p.highlight_clip)) - p.target_at(g)
 
     def clipped(g: float) -> float:
         mapped = np.asarray(tone_map(y_unity * g), dtype=np.float64)
         if peak_unity is not None:
             ratio = np.divide(mapped, y_unity * g, out=np.zeros_like(mapped), where=y_unity > 0)
             mapped = np.maximum(mapped, peak_unity * g * ratio)
-        return float(np.mean(mapped >= p.clip_level)) - p.max_clip_fraction
+        return wmean((mapped >= p.clip_level).astype(np.float64)) - p.max_clip_fraction
 
     def bisect(f: Callable[[float], float]) -> float:
         lo, hi = math.log2(p.gain_min), math.log2(p.gain_max)

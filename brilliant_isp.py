@@ -44,6 +44,7 @@ from util.pipeline_types import (
     StageEvent,
 )
 from util.bayer_repair import green_zero_fraction, repair_zero_green_cfa
+from util import metering_roi
 from util.raw_io import (
     alignment_from_sensor_info,
     apply_data_alignment,
@@ -1860,8 +1861,11 @@ class BrilliantISP:
                 y_unity = smooth_ae.scene_luminance(rgb_linear, applied, smooth_params.meter_stride)
                 peak_unity = (smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
                               if smooth_params.max_clip_fraction < 1.0 else None)
-                smooth_desired = smooth_ae.solve_gain(y_unity, _smooth_tone_map, smooth_params,
-                                                      peak_unity=peak_unity)
+                roi_w = metering_roi.weight_map(np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae))
+                stride = smooth_params.meter_stride
+                smooth_desired = smooth_ae.solve_gain(
+                    y_unity, _smooth_tone_map, smooth_params, peak_unity=peak_unity,
+                    weights=None if roi_w is None else roi_w[::stride, ::stride])
                 prev = hint_state.ae_gain if hint_state is not None else None
                 new_gain = smooth_ae.next_gain(prev, smooth_desired, smooth_params)
                 self._smooth_gain = new_gain

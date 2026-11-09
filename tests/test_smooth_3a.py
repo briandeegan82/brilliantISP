@@ -126,3 +126,14 @@ def test_clip_cap_backoff_is_bounded():
     free = sc.solve_gain(y, tm, sc.SmoothAEParams(output_target=0.18, gain_max=1e3))
     p = sc.SmoothAEParams(output_target=0.18, gain_max=1e3, max_clip_fraction=0.05, clip_max_backoff_stops=0.5)
     assert sc.solve_gain(y, tm, p) == pytest.approx(free * 2 ** -0.5, rel=1e-6)
+
+
+def test_solve_gain_uses_roi_weights():
+    y = np.concatenate([np.full(50, 0.001), np.full(50, 0.1)])
+    w = np.concatenate([np.ones(50), np.zeros(50)])
+    p = sc.SmoothAEParams(output_target=0.18, gain_max=1e4)
+    g = sc.solve_gain(y, lambda v: v, p, weights=w)
+    assert g == pytest.approx(180.0, rel=1e-3)
+    assert sc.solve_gain(y, lambda v: v, p) < g
+    with pytest.raises(ValueError):
+        sc.solve_gain(y, lambda v: v, p, weights=np.zeros(100))
