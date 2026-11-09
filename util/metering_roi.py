@@ -30,7 +30,9 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-_KEYS = frozenset({"is_enable", "ellipse", "include_rect", "exclude_rects", "exclude_polygons", "zone_weights"})
+_KEYS = frozenset(
+    {"is_enable", "ellipse", "include_rect", "exclude_rects", "exclude_polygons", "zone_weights"}
+)
 _CACHE: dict[tuple[int, int, str], np.ndarray] = {}
 _CACHE_MAX = 32
 
@@ -78,7 +80,8 @@ def _plain(value: Any) -> Any:
 
 
 def _num(value: Any, name: str) -> float:
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float, np.integer, np.floating)):
+    real = (int, float, np.integer, np.floating)
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, real):
         raise ValueError(f"{name} must be a number")
     out = float(value)
     if not math.isfinite(out):
@@ -160,7 +163,8 @@ def _build(h: int, w: int, roi: Mapping[str, Any]) -> np.ndarray:
                 or not all(isinstance(row, (list, tuple)) and row for row in grid)
                 or len({len(row) for row in grid}) != 1):
             raise ValueError("roi.zone_weights must be a nonempty rectangular list of rows")
-        table = np.array([[_num(v, "roi.zone_weights") for v in row] for row in grid], dtype=np.float64)
+        rows = [[_num(v, "roi.zone_weights") for v in row] for row in grid]
+        table = np.array(rows, dtype=np.float64)
         if np.any(table < 0) or not np.any(table > 0):
             raise ValueError("roi.zone_weights must be nonnegative with at least one positive zone")
         rows = np.minimum((y[:, 0] * table.shape[0]).astype(np.int64), table.shape[0] - 1)

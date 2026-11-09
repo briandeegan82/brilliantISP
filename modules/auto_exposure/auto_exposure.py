@@ -7,9 +7,12 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
 
-import time
-import numpy as np
 import math
+import time
+
+import numpy as np
+
+from util.color import luminance as _luma
 from util.debug_utils import get_debug_logger
 from util.isp_types import AutoExposureConfig, SensorInfo
 from util.metering_roi import roi_config, weight_map
@@ -191,10 +194,9 @@ class AutoExposure:
 
     def _native_exposure_feedback(self) -> int | None:
         """Skewness feedback on normalized scene-linear RGB (no code downshift)."""
-        from util.color import luminance as _luma
-
         src = np.asarray(self.img)
-        if src.ndim != 3 or src.shape[-1] != 3 or src.dtype.kind not in "fiu" or not np.all(np.isfinite(src)):
+        if (src.ndim != 3 or src.shape[-1] != 3 or src.dtype.kind not in "fiu"
+                or not np.all(np.isfinite(src))):
             raise ValueError("native AE input must be finite real HWC3 scene-linear RGB")
         center = float(self.center_illuminance)
         target = self.param_ae.get("target_luminance")

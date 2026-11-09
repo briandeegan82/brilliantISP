@@ -1,14 +1,21 @@
+"""Tests for the opt-in AE/AWB metering ROI."""
+# pylint: disable=missing-function-docstring
 from __future__ import annotations
 
+import copy
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import pytest
+import yaml
 
 from modules.auto_exposure.auto_exposure import AutoExposure
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance
 from util.isp_types import AutoExposureConfig, GenericConfig, SensorInfo, WhiteBalanceConfig
 from util.metering_roi import roi_config, weight_map
+from util.pipeline_runner import process_frame
+from util.pipeline_types import ProcessingState
 
 
 def sensor() -> SensorInfo:
@@ -27,15 +34,18 @@ def ae_cfg(roi: Any = None) -> AutoExposureConfig:
 
 
 def awb_cfg(roi: Any = None) -> GenericConfig:
-    cfg: dict[str, Any] = {"is_enable": True, "is_debug": False, "algorithm": "grey_world",
-                           "percentage": 20, "underexposed_percentage": 0.0, "overexposed_percentage": 0.0}
+    cfg: dict[str, Any] = {
+        "is_enable": True, "is_debug": False, "algorithm": "grey_world", "percentage": 20,
+        "underexposed_percentage": 0.0, "overexposed_percentage": 0.0,
+    }
     if roi is not None:
         cfg["roi"] = roi
     return cast(GenericConfig, cfg)
 
 
 def wbc() -> WhiteBalanceConfig:
-    return cast(WhiteBalanceConfig, {"r_gain": 1.0, "b_gain": 1.0, "is_enable": True, "is_save": False})
+    gains = {"r_gain": 1.0, "b_gain": 1.0, "is_enable": True, "is_save": False}
+    return cast(WhiteBalanceConfig, gains)
 
 
 LOWER_HALF = {"is_enable": True, "include_rect": [0.0, 0.5, 1.0, 1.0]}
@@ -51,12 +61,15 @@ def test_inactive_roi_returns_none() -> None:
 def test_geometry_ellipse_rects_polygon_and_zones() -> None:
     full = weight_map((4, 4), {"is_enable": True})
     assert full is not None and np.all(full == 1.0) and not full.flags.writeable
-    ell = weight_map((10, 10), {"is_enable": True, "ellipse": {"cx": 0.5, "cy": 0.5, "rx": 0.3, "ry": 0.3}})
+    circle = {"cx": 0.5, "cy": 0.5, "rx": 0.3, "ry": 0.3}
+    ell = weight_map((10, 10), {"is_enable": True, "ellipse": circle})
     assert ell is not None and ell[5, 5] == 1 and ell[0, 0] == 0 and ell[5, 0] == 0
     rect = weight_map((4, 4), {"is_enable": True, "exclude_rects": [[0.0, 0.0, 0.5, 0.5]]})
-    assert rect is not None and rect[:2, :2].sum() == 0 and rect[2:, :].sum() == 8 and rect[:2, 2:].sum() == 4
+    assert rect is not None and rect[:2, :2].sum() == 0
+    assert rect[2:, :].sum() == 8 and rect[:2, 2:].sum() == 4
     # Triangle over the lower-left corner (ego-body style boundary).
-    tri = weight_map((4, 4), {"is_enable": True, "exclude_polygons": [[[0, 1], [0, 0.5], [0.5, 1]]]})
+    corner = [[[0, 1], [0, 0.5], [0.5, 1]]]
+    tri = weight_map((4, 4), {"is_enable": True, "exclude_polygons": corner})
     assert tri is not None and tri[3, 0] == 0 and tri[0, 0] == 1 and tri[3, 3] == 1
     zones = weight_map((4, 4), {"is_enable": True, "zone_weights": [[1, 1], [3, 3]]})
     assert zones is not None and np.all(zones[:2] == 1) and np.all(zones[2:] == 3)
@@ -140,3 +153,27 @@ def test_awb_samples_only_roi() -> None:
     assert roi == pytest.approx((1.0, 1.0))
     assert full[0] < 1.0
     assert roi_awb.sample_count == 8
+
+
+def _pipeline_config() -> dict:
+    svs = Path(__file__).resolve().parents[1] / "config" / "SVS_cam.yml"
+    cfg = yaml.safe_load(svs.read_text())
+    cfg["sensor_info"].update(width=64, height=48, hdr_bit_depth=12)
+    for section in cfg.values():
+        if isinstance(section, dict) and "is_enable" in section:
+            section["is_enable"] = False
+    cfg["auto_exposure"]["is_enable"] = True
+    cfg["platform"].update(render_3a=False, plot_histograms=False, debug_enabled=False,
+                           short_output_names=True, disable_progress_bar=True)
+    return cfg
+
+
+def test_ae_roi_changes_meter_in_full_pipeline() -> None:
+    cfg = _pipeline_config()
+    raw = np.full((48, 64), 200, np.uint16)
+    raw[:24] = 4000
+    full = process_frame(raw, copy.deepcopy(cfg), state=ProcessingState())
+    cfg["auto_exposure"]["roi"] = LOWER_HALF
+    roi = process_frame(raw, cfg, state=ProcessingState())
+    assert roi.feedback["ae_meter_average"] < 0.25 * full.feedback["ae_meter_average"]
+    assert roi.feedback["ae_sample_count"] == full.feedback["ae_sample_count"] // 2

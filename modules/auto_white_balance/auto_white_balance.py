@@ -1,5 +1,3 @@
-from util.debug_utils import get_debug_logger
-
 """
 File: auto_white_balance.py
 Description: 3A - AWB Runs the AWB algorithm based on selection from config file
@@ -9,12 +7,15 @@ Code / Paper  Reference: https://www.sciencedirect.com/science/article/abs/pii/0
 Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
-import time
 import math
+import time
+
 import numpy as np
+
 from modules.auto_white_balance.gray_world import GrayWorld as GW
 from modules.auto_white_balance.norm_gray_world import NormGrayWorld as NGW
 from modules.auto_white_balance.pca import PCAIlluminEstimation as PCA
+from util.debug_utils import get_debug_logger
 from util.metering_roi import roi_config, weight_map
 
 
@@ -41,7 +42,11 @@ class AutoWhiteBalance:
         self.parm_wbc = parm_wbc
 
         # Initialize debug logger with config from parm_awb
-        debug_config = {"debug_enabled": parm_awb.get("is_debug", False), "debug_log_level": "INFO", "debug_log_file": None}
+        debug_config = {
+            "debug_enabled": parm_awb.get("is_debug", False),
+            "debug_log_level": "INFO",
+            "debug_log_file": None,
+        }
         self.logger = get_debug_logger("AutoWhiteBalance", config=debug_config)
 
     def determine_white_balance_gain(self):
@@ -151,7 +156,8 @@ class AutoWhiteBalance:
             raise ValueError(f"unknown CFA pattern {self.bayer!r}")
         for name, value in (("underexposed_percentage", self.underexposed_percentage),
                             ("overexposed_percentage", self.overexposed_percentage)):
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not 0 <= value <= 100):
                 raise ValueError(f"{name} must be finite in 0..100")
         if algo == "pca":
             try:
@@ -245,7 +251,8 @@ class AutoWhiteBalance:
         if not self.enable:
             return self._awb_fallback(None, manual, "disabled")
         algo = self._awb_controls()
-        if isinstance(input_gain, (bool, np.bool_)) or not isinstance(input_gain, (int, float, np.integer, np.floating)) \
+        real = (int, float, np.integer, np.floating)
+        if isinstance(input_gain, (bool, np.bool_)) or not isinstance(input_gain, real) \
                 or not 0 < input_gain <= float(np.finfo(np.float64).max):
             raise ValueError("AWB input_gain must be finite and positive")
         rows = self._awb_rows(input_gain=float(input_gain))
