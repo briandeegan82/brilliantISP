@@ -157,8 +157,8 @@ auto_white_balance:
   - 2.0
   - 1.4
   low_light_gain_range:
-  - 20000.0
-  - 200000.0
+  - 7000.0
+  - 70000.0
   roi:
     is_enable: true
     ellipse: &id001
