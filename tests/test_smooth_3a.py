@@ -157,3 +157,27 @@ def test_awb_gain_locus_pulls_estimate_to_max_distance():
     import pytest
     with pytest.raises(ValueError):
         project_to_locus(1.0, 1.0, {"gain_locus": [[2.0, 1.3]]})
+
+
+def test_low_light_deadband_widens_only_at_high_gain():
+    p = sc.SmoothAEParams(deadband_stops=0.05, low_light_deadband_stops=0.25, low_light_gain_range=(1e4, 1e5),
+                          time_constant_s=0.0, max_rate_stops_per_s=100.0, frame_rate=10.0, gain_max=1e6)
+    assert p.deadband_at(1e3) == 0.05 and abs(p.deadband_at(1e5) - 0.25) < 1e-12
+    assert 0.05 < p.deadband_at(3e4) < 0.25
+    assert sc.next_gain(2e5, 2e5 * 2 ** 0.2, p) == 2e5
+    assert sc.next_gain(2e3, 2e3 * 2 ** 0.2, p) > 2e3
+    assert sc.SmoothAEParams.from_config({}).low_light_deadband_stops is None
+    with pytest.raises(ValueError):
+        sc.SmoothAEParams.from_config({"low_light_deadband_stops": -0.1})
+
+
+def test_target_schedule_is_gain_scheduled_and_validated():
+    p = sc.SmoothAEParams.from_config({"output_target": 0.16, "low_light_target_stops": 1.0,
+                                       "target_schedule": [[1e4, -0.2], [2e4, 0.0], [2e5, -0.5]]})
+    assert abs(p.target_at(1e3) - 0.16 * 2 ** -0.2) < 1e-12
+    assert abs(p.target_at(2e4) - 0.16) < 1e-12
+    assert abs(p.target_at(1e6) - 0.16 * 2 ** -0.5) < 1e-12
+    assert 0.16 * 2 ** -0.2 < p.target_at(1.4e4) < 0.16
+    for bad in ([[1e4, 0.0]], [[2e4, 0.0], [1e4, 0.0]], [[0.0, 0.0], [1e4, 0.0]]):
+        with pytest.raises(ValueError):
+            sc.SmoothAEParams.from_config({"target_schedule": bad})

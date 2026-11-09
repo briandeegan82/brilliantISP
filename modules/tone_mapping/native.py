@@ -147,42 +147,39 @@ def map_native_max_rgb(image: np.ndarray, *, config: ToneMappingSpec) -> np.ndar
         raise ToneMappingError(str(exc)) from exc
 
 
-def map_native_hybrid(
+def map_native_max_blend(
     image: np.ndarray,
     *,
     config: ToneMappingSpec,
-    blend: tuple[float, float] = (0.75, 1.0),
+    k: float = 1.0,
     desat: tuple[float, float] | None = None,
 ) -> np.ndarray:
-    """Luminance recombination, blended toward max_rgb only near display white.
+    """Global norm N = max(Y, k * max(R, G, B)); out = rgb * f(N) / N.
 
-    w = clip((peak_lum - blend[0]) / (blend[1] - blend[0]), 0, 1), where peak_lum is the
-    max channel after luminance recombination. Midtones stay luminance-based, so a
-    grey-preserving WB step does not move their luma; channels that would exceed white
-    use the max_rgb mapping. ``desat`` = (d0, d1) optionally pulls pixels whose max output
-    channel is in [d0, d1] toward neutral at their own output luma (chroma roll-off
-    near white: luma is kept, single channels stop clipping, emitter cores go neutral).
-    All weights are fixed global functions of the pixel's own signal.
+    Monotone in exposure: scaling the input by t gives rgb * f(t N) / N, which rises with t
+    because f does. k = 0 is luminance recombination, k = 1 is max_rgb; for 0 < k < 1,
+    colours with k * max <= Y (most midtones) follow the luminance path, so grey-preserving
+    WB steps do not move their luma, and saturated colours are bounded by the max channel.
+    ``desat`` = (d0, d1) pulls pixels whose max output channel is in [d0, d1] toward neutral
+    at their own output luma (luma unchanged, so monotonicity is kept).
     """
     if not config.enabled:
         return image
-    t0, t1 = (float(v) for v in blend)
-    if not 0.0 <= t0 < t1:
-        raise ToneMappingError("tone_mapping.rgb_norm_blend must satisfy 0 <= lo < hi")
+    k = float(k)
+    if not 0.0 <= k <= 1.0:
+        raise ToneMappingError("tone_mapping.rgb_norm_k must be in [0, 1]")
     rgb = _native_float_source(image).astype(np.float64)
     if rgb.ndim != 3:
-        raise ToneMappingError("hybrid tone mapping requires an HxWx3 RGB image")
+        raise ToneMappingError("max_blend tone mapping requires an HxWx3 RGB image")
     from util.color import luminance as _rgb_luma
 
     y = np.maximum(_rgb_luma(rgb, dtype=np.float64), 0.0)
-    m = np.maximum(np.max(rgb, axis=-1), 0.0)
-    mapped_y = _map_plane(y, config, None)
-    mapped_m = _map_plane(m, config, None)
+    norm = np.maximum(y, k * np.maximum(np.max(rgb, axis=-1), 0.0))
+    mapped_n = _map_plane(norm, config, None)
+    safe = np.where(norm > _RGB_Y_FLOOR, norm, 1.0)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        ry = np.where(y > _RGB_Y_FLOOR, mapped_y / np.where(y > _RGB_Y_FLOOR, y, 1.0), 0.0)
-        rm = np.where(m > _RGB_Y_FLOOR, mapped_m / np.where(m > _RGB_Y_FLOOR, m, 1.0), 0.0)
-    w = np.clip((m * ry - t0) / (t1 - t0), 0.0, 1.0)
-    out = rgb * ((1.0 - w) * ry + w * rm)[..., None]
+        out = rgb * (mapped_n / safe)[..., None]
+    out[norm <= _RGB_Y_FLOOR] = 0.0
     if desat is not None:
         d0, d1 = (float(v) for v in desat)
         if not 0.0 <= d0 < d1:
@@ -191,8 +188,7 @@ def map_native_hybrid(
         s = np.clip((peak - d0) / (d1 - d0), 0.0, 1.0)
         y_out = np.maximum(_rgb_luma(out, dtype=np.float64), 0.0)[..., None]
         out = out + s * (y_out - out)
-    out[(y <= _RGB_Y_FLOOR) & (m <= _RGB_Y_FLOOR)] = 0.0
     try:
-        return as_float32(out, name="native_hybrid_tone_map")
+        return as_float32(out, name="native_max_blend_tone_map")
     except ValueError as exc:
         raise ToneMappingError(str(exc)) from exc

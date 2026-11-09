@@ -33,6 +33,8 @@ class SmoothAEParams:
     clip_level: float = 0.98
     max_clip_fraction: float = 1.0
     clip_max_backoff_stops: float = 1.0
+    low_light_deadband_stops: float | None = None
+    target_schedule: tuple[tuple[float, float], ...] | None = None
 
     @classmethod
     def from_config(cls, parm_ae: Mapping[str, Any]) -> "SmoothAEParams":
@@ -52,14 +54,23 @@ class SmoothAEParams:
             clip_level=float(parm_ae.get("clip_level", d.clip_level)),
             max_clip_fraction=float(parm_ae.get("max_clip_fraction", d.max_clip_fraction)),
             clip_max_backoff_stops=float(parm_ae.get("clip_max_backoff_stops", d.clip_max_backoff_stops)),
+            low_light_deadband_stops=(None if parm_ae.get("low_light_deadband_stops") is None
+                                      else float(parm_ae["low_light_deadband_stops"])),
+            target_schedule=(None if parm_ae.get("target_schedule") is None
+                             else tuple((float(g), float(st)) for g, st in parm_ae["target_schedule"])),
         )
+        ts = out.target_schedule
+        if ts is not None and (len(ts) < 2 or any(g <= 0 or not math.isfinite(st) for g, st in ts)
+                               or any(b[0] <= a[0] for a, b in zip(ts, ts[1:]))):
+            raise ValueError("auto_exposure.target_schedule must be >= 2 [gain, stops] points, gains increasing")
         g0, g1 = out.low_light_gain_range
         if not (0 < out.output_target < 1 and out.time_constant_s >= 0 and out.deadband_stops >= 0
                 and out.max_rate_stops_per_s > 0 and out.frame_rate > 0
                 and 0 < out.gain_min < out.gain_max and out.meter_stride >= 1
                 and out.low_light_target_stops >= 0 and 0 < g0 < g1
                 and 0 < out.clip_level <= 1 and 0 < out.max_clip_fraction <= 1
-                and out.clip_max_backoff_stops >= 0):
+                and out.clip_max_backoff_stops >= 0
+                and (out.low_light_deadband_stops is None or out.low_light_deadband_stops >= 0)):
             raise ValueError(f"invalid smooth AE parameters: {out}")
         return out
 
@@ -75,14 +86,31 @@ class SmoothAEParams:
         return self.max_rate_stops_per_s / self.frame_rate
 
     def target_at(self, gain: float) -> float:
-        """Output target, lowered by up to ``low_light_target_stops`` as total gain rises
+        """Output target. With ``target_schedule`` ([gain, stops] points, log-gain linear
+        interpolation, flat beyond the ends) it is output_target * 2**stops(gain); otherwise it is
+        lowered by up to ``low_light_target_stops`` as total gain rises
         through ``low_light_gain_range`` (log-linear), so noise-limited scenes are not
         forced to full mid-grey."""
+        if self.target_schedule is not None:
+            lg = [math.log2(g) for g, _ in self.target_schedule]
+            st = [v for _, v in self.target_schedule]
+            return self.output_target * 2.0 ** float(np.interp(math.log2(gain), lg, st))
         if self.low_light_target_stops == 0:
             return self.output_target
+        return self.output_target * 2.0 ** (-self.low_light_target_stops * self.low_light_weight(gain))
+
+    def low_light_weight(self, gain: float) -> float:
+        """0 below ``low_light_gain_range``, 1 above it, log-linear in between."""
         g0, g1 = (math.log2(v) for v in self.low_light_gain_range)
-        w = min(max((math.log2(gain) - g0) / (g1 - g0), 0.0), 1.0)
-        return self.output_target * 2.0 ** (-self.low_light_target_stops * w)
+        return min(max((math.log2(gain) - g0) / (g1 - g0), 0.0), 1.0)
+
+    def deadband_at(self, gain: float) -> float:
+        """Deadband, widened toward ``low_light_deadband_stops`` across the low-light gain range
+        (noise-limited metering at high gain must not drive gain hunting)."""
+        if self.low_light_deadband_stops is None:
+            return self.deadband_stops
+        w = self.low_light_weight(gain)
+        return self.deadband_stops + (self.low_light_deadband_stops - self.deadband_stops) * w
 
 
 def scene_luminance(rgb_linear: np.ndarray, applied_gain: float, stride: int) -> np.ndarray:
@@ -157,8 +185,9 @@ def next_gain(previous: float | None, desired: float, p: SmoothAEParams) -> floa
     if previous is None or not math.isfinite(previous) or previous <= 0:
         return desired
     err = math.log2(desired) - math.log2(previous)
-    if abs(err) <= p.deadband_stops:
+    deadband = p.deadband_at(previous)
+    if abs(err) <= deadband:
         return float(previous)
-    err -= math.copysign(p.deadband_stops, err)
+    err -= math.copysign(deadband, err)
     step = float(np.clip(p.alpha * err, -p.max_step_stops, p.max_step_stops))
     return float(np.clip(previous * 2.0 ** step, p.gain_min, p.gain_max))

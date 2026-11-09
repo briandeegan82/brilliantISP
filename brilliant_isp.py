@@ -1822,6 +1822,11 @@ class BrilliantISP:
             self._smooth_gain = float(prev_gain) if prev_gain is not None else float(self.parm_dga["gain_array"][gain_idx])
             smooth_linear = not bool(self.parm_bnr.get("is_enable", False))
 
+            tm_cfg_ae = c_yaml.get("tone_mapping", {}) or {}
+            rgb_norm_ae = str(tm_cfg_ae.get("rgb_norm", "luminance"))
+            k_ae = 1.0 if rgb_norm_ae == "max_rgb" else float(tm_cfg_ae.get("rgb_norm_k", 1.0))
+            model_norm = bool(self.parm_ae.get("model_rgb_norm", False)) and rgb_norm_ae != "luminance"
+
             def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
                 if not resolved.spec.enabled:
                     return y
@@ -1869,10 +1874,21 @@ class BrilliantISP:
                 y_unity = smooth_ae.scene_luminance(rgb_linear, applied, smooth_params.meter_stride)
                 peak_unity = (smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
                               if smooth_params.max_clip_fraction < 1.0 else None)
+                ae_tone_map = _smooth_tone_map
+                if model_norm:
+                    # output luma under N = max(Y, k*max) is Y*f(N)/N = f(Y*r)/r with r = N/Y >= 1
+                    pk = smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
+                    y_pos = y_unity > 0
+                    norm_r = np.where(y_pos, np.maximum(1.0, k_ae * pk / np.where(y_pos, y_unity, 1.0)), 1.0)
+
+                    def ae_tone_map(y: np.ndarray, r: np.ndarray = norm_r) -> np.ndarray:
+                        if np.shape(y) != r.shape:
+                            return _smooth_tone_map(y)
+                        return _smooth_tone_map(y * r) / r
                 roi_w = metering_roi.weight_map(np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae))
                 stride = smooth_params.meter_stride
                 smooth_desired = smooth_ae.solve_gain(
-                    y_unity, _smooth_tone_map, smooth_params, peak_unity=peak_unity,
+                    y_unity, ae_tone_map, smooth_params, peak_unity=peak_unity,
                     weights=None if roi_w is None else roi_w[::stride, ::stride])
                 prev = hint_state.ae_gain if hint_state is not None else None
                 new_gain = smooth_ae.next_gain(prev, smooth_desired, smooth_params)
@@ -1969,16 +1985,15 @@ class BrilliantISP:
         else:
             tm_yaml = c_yaml.get("tone_mapping", {})
             rgb_norm = str(tm_yaml.get("rgb_norm", "luminance"))
-            if rgb_norm not in ("luminance", "max_rgb", "hybrid"):
-                raise ValueError("tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'hybrid'")
+            if rgb_norm not in ("luminance", "max_rgb", "max_blend"):
+                raise ValueError("tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'max_blend'")
 
             def _tone_map_post() -> np.ndarray:
-                if rgb_norm == "hybrid":
-                    from modules.tone_mapping.native import map_native_hybrid
+                if rgb_norm == "max_blend":
+                    from modules.tone_mapping.native import map_native_max_blend
                     desat = tm_yaml.get("near_white_desat")
-                    return map_native_hybrid(
-                        rgb_linear / tm_white, config=tm_spec,
-                        blend=tuple(tm_yaml.get("rgb_norm_blend", (0.75, 1.0))),
+                    return map_native_max_blend(
+                        rgb_linear / tm_white, config=tm_spec, k=float(tm_yaml.get("rgb_norm_k", 1.0)),
                         desat=tuple(desat) if desat is not None else None)
                 if rgb_norm == "max_rgb":
                     from modules.tone_mapping.native import map_native_max_rgb
