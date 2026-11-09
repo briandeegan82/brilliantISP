@@ -163,6 +163,8 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 
 **AWB keys:** `is_enable`, `algorithm` (`grey_world`, `norm_2`, `pca`), `underexposed_percentage`, `overexposed_percentage`, `percentage` (PCA).
 
+Optional **`roi`** (see [Metering ROI](#metering-roi-auto_exposureroi-auto_white_balanceroi)): AWB samples only pixels with a positive ROI weight; positive zone weights are treated equally.
+
 **WB keys:** `is_enable`, `r_gain`, `b_gain`. **`white_balance.is_auto`** is synced from `auto_white_balance.is_enable` at load.
 
 **Tuning:** Enable AWB for general scenes; use manual `r_gain`/`b_gain` for charts or when AWB is unstable. PCA `percentage` affects outlier rejection. For HDR, extremes are clipped using `hdr_bit_depth`—keep saturation settings consistent.
@@ -246,6 +248,25 @@ The **filmic math** is the same family (Knarkowicz rational for ACES; Hable `_ha
 **Keys:** `is_enable`, `center_illuminance` (fraction in \([0,1]\) of meter max or absolute), `histogram_skewness` (acceptable skewness range), optional `target_luminance`, `exposure_correction_mode` (`step` vs `direct`), `rerun_from_digital_gain`.
 
 **Tuning:** Narrow `histogram_skewness` = more aggressive correction. `center_illuminance` sets the desired “middle” of the histogram. Use **direct** mode with `digital_gain.is_auto` for one-shot gain selection; ensure `gain_array` is monotonic and covers the needed range.
+
+Optional **`roi`**: the meter average and histogram moments use the ROI weights instead of the full frame.
+
+#### Metering ROI (`auto_exposure.roi`, `auto_white_balance.roi`)
+
+Opt-in and absent by default; when absent or `is_enable: false` the statistics use the full frame exactly as before (`util/metering_roi.py`). Coordinates are normalized to the statistics image (x: 0 left → 1 right, y: 0 top → 1 bottom) after embedded-row removal, sensor flips and crop, so the same values select the same scene region for AE (full-resolution RGB) and AWB (half-resolution CFA planes). Typical uses: limit statistics to a fisheye image circle, exclude the ego-vehicle body, or weight the lower (road) part of the frame.
+
+```yaml
+auto_exposure:
+  roi:
+    is_enable: true
+    ellipse: {cx: 0.5, cy: 0.5, rx: 0.45, ry: 0.56}   # keep inside
+    include_rect: [0.0, 0.1, 1.0, 1.0]                # keep inside, [x0, y0, x1, y1]
+    exclude_rects: [[0.0, 0.0, 0.1, 0.2]]
+    exclude_polygons: [[[0.0, 1.0], [0.0, 0.85], [0.5, 0.78], [1.0, 0.85], [1.0, 1.0]]]
+    zone_weights: [[1, 1, 1], [1, 2, 1], [2, 3, 2]]   # rows top→bottom, nearest zone
+```
+
+All keys except `is_enable` are optional; unknown keys, out-of-range rectangles and an ROI that selects no pixels are errors. The CPU engine implements the ROI; `brilliantisp_gpu` does not read it.
 
 ---
 

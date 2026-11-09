@@ -7,11 +7,15 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
 
-import time
-import numpy as np
 import math
+import time
+
+import numpy as np
+
+from util.color import luminance as _luma
 from util.debug_utils import get_debug_logger
 from util.isp_types import AutoExposureConfig, SensorInfo
+from util.metering_roi import roi_config, weight_map
 
 
 class AutoExposure:
@@ -95,6 +99,9 @@ class AutoExposure:
         # For Luminance Histograms, Image is first converted into greyscale image
         # Function also returns average luminance of image which is used as AE-Stat
         grey_img, avg_lum = self.get_greyscale_image(self.img)
+        weights = self._roi_weights(grey_img.shape)
+        if weights is not None:
+            avg_lum = np.float64(np.sum(grey_img * weights) / np.sum(weights))
         self.logger.info(f"Average luminance is = {avg_lum}")
 
         max_ch = self._max_channel_after_shift()
@@ -103,7 +110,7 @@ class AutoExposure:
         center = self._skewness_center(max_ch)
 
         # Histogram skewness Calculation for AE Stats
-        skewness = self.get_luminance_histogram_skewness(grey_img, center)
+        skewness = self.get_luminance_histogram_skewness(grey_img, center, weights=weights)
 
         # get the ranges
         upper_limit = self.histogram_skewness_range
@@ -134,7 +141,13 @@ class AutoExposure:
         grey_img = np.clip(grey, 0.0, max_ch)
         return grey_img, np.average(grey_img, axis=(0, 1))
 
-    def get_luminance_histogram_skewness(self, img: np.ndarray, center: float) -> np.floating:
+    def _roi_weights(self, shape: tuple[int, ...]) -> np.ndarray | None:
+        """Opt-in ``auto_exposure.roi`` metering weights at ``shape`` (None = full frame)."""
+        return weight_map(shape, roi_config(self.param_ae))
+
+    def get_luminance_histogram_skewness(
+        self, img: np.ndarray, center: float, weights: np.ndarray | None = None
+    ) -> np.floating:
         """
         Skewness Calculation in reference to:
         Zwillinger, D. and Kokoska, S. (2000). CRC Standard Probability and Statistics
@@ -143,6 +156,11 @@ class AutoExposure:
 
         # First subtract central luminance to calculate skewness around it
         img = img.astype(np.float64) - center
+        w = None
+        if weights is not None:
+            sel = np.asarray(weights) > 0
+            img = img[sel]
+            w = np.asarray(weights, dtype=np.float64)[sel]
 
         # The sample skewness is computed as the Fisher-Pearson coefficient of
         # skewness, i.e. (m_3 / m_2**(3/2)) * g_1
@@ -162,8 +180,8 @@ class AutoExposure:
             skewness = 0.0
         else:
             u = img / scale
-            m_2 = np.mean(u * u)
-            m_3 = np.mean(u * u * u)
+            m_2 = np.average(u * u, weights=w)
+            m_3 = np.average(u * u * u, weights=w)
             if m_2 == 0:
                 skewness = 0.0
             else:
@@ -176,10 +194,9 @@ class AutoExposure:
 
     def _native_exposure_feedback(self) -> int | None:
         """Skewness feedback on normalized scene-linear RGB (no code downshift)."""
-        from util.color import luminance as _luma
-
         src = np.asarray(self.img)
-        if src.ndim != 3 or src.shape[-1] != 3 or src.dtype.kind not in "fiu" or not np.all(np.isfinite(src)):
+        if (src.ndim != 3 or src.shape[-1] != 3 or src.dtype.kind not in "fiu"
+                or not np.all(np.isfinite(src))):
             raise ValueError("native AE input must be finite real HWC3 scene-linear RGB")
         center = float(self.center_illuminance)
         target = self.param_ae.get("target_luminance")
@@ -200,8 +217,13 @@ class AutoExposure:
                 f"native AE input must be finite HWC3 scene-linear RGB, got {src.shape}"
             )
         y = np.maximum(_luma(src.astype(np.float64), dtype=np.float64), 0.0)
-        mean = float(np.mean(y))
-        self.sample_count = int(y.size)
+        weights = self._roi_weights(y.shape)
+        if weights is None:
+            mean = float(np.mean(y))
+            self.sample_count = int(y.size)
+        else:
+            mean = float(np.sum(y * weights) / np.sum(weights))
+            self.sample_count = int(np.count_nonzero(weights))
         self.last_max_channel_meter = 1
         if self.sample_count == 0:
             self.last_meter_average = None
@@ -209,7 +231,7 @@ class AutoExposure:
         self.last_meter_average = mean
         if mean <= 0:
             return None
-        skew = self.get_luminance_histogram_skewness(y, center)
+        skew = self.get_luminance_histogram_skewness(y, center, weights=weights)
         if skew < -upper:
             return -1
         if skew > upper:
