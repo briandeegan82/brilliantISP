@@ -566,3 +566,15 @@ def test_up_to_wb_repeated_runs_same_result() -> None:
     assert isp.current_frame is not None
     np.testing.assert_array_equal(isp.current_frame, first)
     assert isp.pass_index == 2
+
+
+def test_ae_roi_changes_meter_in_full_pipeline() -> None:
+    cfg = _fast_config()
+    cfg["auto_exposure"]["is_enable"] = True
+    raw = np.full((48, 64), 200, np.uint16)
+    raw[:24] = 4000
+    full = process_frame(raw, copy.deepcopy(cfg), state=ProcessingState())
+    cfg["auto_exposure"]["roi"] = {"is_enable": True, "include_rect": [0.0, 0.5, 1.0, 1.0]}
+    roi = process_frame(raw, cfg, state=ProcessingState())
+    assert roi.feedback["ae_meter_average"] < 0.25 * full.feedback["ae_meter_average"]
+    assert roi.feedback["ae_sample_count"] == full.feedback["ae_sample_count"] // 2

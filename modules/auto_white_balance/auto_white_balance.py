@@ -15,6 +15,7 @@ import numpy as np
 from modules.auto_white_balance.gray_world import GrayWorld as GW
 from modules.auto_white_balance.norm_gray_world import NormGrayWorld as NGW
 from modules.auto_white_balance.pca import PCAIlluminEstimation as PCA
+from util.metering_roi import roi_config, weight_map
 
 
 class AutoWhiteBalance:
@@ -179,7 +180,11 @@ class AutoWhiteBalance:
         overexposed_limit = max_pixel_value - self.overexposed_percentage * approx_percentage
         underexposed_limit = self.underexposed_percentage * approx_percentage
         bad = np.sum((rgb < underexposed_limit) | (rgb > overexposed_limit), axis=2)
-        rows = rgb[bad == 0]
+        keep = bad == 0
+        weights = weight_map(rgb.shape[:2], roi_config(self.parm_awb))
+        if weights is not None:
+            keep &= weights > 0
+        rows = rgb[keep]
         rows = rows[np.all(np.isfinite(rows), axis=1)]
         self.flatten_img = rows
         # print(self.flatten_raw.shape)
