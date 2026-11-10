@@ -18,7 +18,6 @@ import numpy as np
 from brilliant_isp import BrilliantISP
 from util.config_schema import validate_config
 from util.pipeline_types import (
-    FrameMetadata,
     PipelineResult,
     ProcessingCancelled,
     ProcessingOptions,

@@ -23,11 +23,14 @@ class ProcessingCancelled(RuntimeError):
 
 
 class CancellationToken(Protocol):
-    def is_set(self) -> bool: ...
+    """Anything with an ``is_set()`` method, such as ``threading.Event``."""
+    def is_set(self) -> bool:
+        """Return True once cancellation has been requested."""
 
 
 @dataclass(frozen=True)
 class FrameMetadata:
+    """Per-frame metadata reported with a processing result."""
     width: int
     height: int
     cfa_pattern: str | None
@@ -67,6 +70,7 @@ class ProcessingState:
 
 @dataclass(frozen=True)
 class StageEvent:
+    """Progress event emitted as a pipeline stage runs."""
     run_id: str
     stage_id: str
     status: str
@@ -93,6 +97,7 @@ class ProcessingOptions:
 
 @dataclass
 class PipelineResult:
+    """Outputs, metadata and stage events from one ``process_frame`` call."""
     native_image: np.ndarray
     native_metadata: FrameMetadata
     preview_rgb8: np.ndarray
