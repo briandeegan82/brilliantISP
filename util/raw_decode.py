@@ -199,6 +199,7 @@ class RawFormat:
     vertical_flip: bool = False
     embedded_rows_top: int = 0
     embedded_rows_bottom: int = 0
+    realign_columns_from: int = 0
     source_format: str = "auto"
     storage_defaulted: bool = False
 
@@ -278,6 +279,12 @@ class RawFormat:
             raise RawFormatError(
                 "embedded_rows_top",
                 f"embedded rows {top}+{bottom} leave no active rows in height {self.height}",
+            )
+        realign = _require_int("realign_columns_from", self.realign_columns_from, 0)
+        if realign and not 2 <= realign < self.width:
+            raise RawFormatError(
+                "realign_columns_from",
+                f"must be 0 (off) or in 2..{self.width - 1}, got {realign}",
             )
         src = str(self.source_format).strip().lower()
         if src not in _SOURCE_FORMATS:
@@ -366,6 +373,7 @@ class RawFormat:
             vertical_flip=sensor.get("vertical_flip", False),
             embedded_rows_top=sensor.get("embedded_rows_top", 0),
             embedded_rows_bottom=sensor.get("embedded_rows_bottom", 0),
+            realign_columns_from=sensor.get("realign_columns_from", 0),
             source_format=sensor.get("source_format", "auto"),
             storage_defaulted=storage_defaulted,
         )
@@ -451,6 +459,12 @@ def _finish(
     top = fmt.embedded_rows_top
     bottom = fmt.embedded_rows_bottom
     pattern = fmt.bayer_pattern
+    start = fmt.realign_columns_from
+    if start:
+        # Columns [start, width) are read out one column early (CFA phase flips there):
+        # shift them right by one and fill the vacated column from the same CFA colour.
+        owned[:, start + 1 :] = owned[:, start:-1].copy()
+        owned[:, start] = owned[:, start - 2]
     if top or bottom:
         owned = owned[top : height - bottom]
         pattern = shift_bayer_pattern(pattern, 0, top)
