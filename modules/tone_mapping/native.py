@@ -10,13 +10,13 @@ no image-derived scale and no diagnostics/files.
 from __future__ import annotations
 
 import dataclasses
-import math
 
 import numpy as np
 
 from modules.tone_mapping.backends import map_luminance
 from modules.tone_mapping.normalization import FrameStats, normalize_luminance
 from modules.tone_mapping.registry import ToneMappingSpec, ToneMappingError
+from util.color import luminance as _rgb_luma
 from util.native_array import as_float32
 
 _Q24 = float(2**24)
@@ -109,8 +109,6 @@ def map_native(
             return as_float32(mapped, name="native_bayer_tone_map")
         except ValueError as exc:
             raise ToneMappingError(str(exc)) from exc
-    from util.color import luminance as _rgb_luma
-
     rgb = src.astype(np.float64)
     y = np.maximum(_rgb_luma(rgb, dtype=np.float64), 0.0)
     mapped_y = _map_plane(y, config, frame_stats)

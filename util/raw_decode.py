@@ -10,11 +10,13 @@ same declared contract rather than guessing.
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, cast
 
 import numpy as np
+
+from util.raw_io import read_raw_payload
 
 BAYER_PATTERNS = ("rggb", "grbg", "gbrg", "bggr")
 
@@ -184,6 +186,7 @@ def flip_bayer_pattern(
 
 @dataclass(frozen=True)
 class RawFormat:
+    """Declared RAW storage contract: geometry, storage format, byte order, alignment, header."""
     width: int
     height: int
     bayer_pattern: str
@@ -373,6 +376,7 @@ class RawFormat:
 
 @dataclass(frozen=True)
 class DecodedRaw:
+    """Decoded Bayer pixels with the effective format, container and warnings."""
     pixels: np.ndarray
     width: int
     height: int
@@ -381,7 +385,7 @@ class DecodedRaw:
     code_bit_depth: int
     container: str
     source_identity: str
-    warnings: tuple[str, ...] = field(default_factory=tuple)
+    warnings: tuple[str, ...] = dataclasses.field(default_factory=tuple)
 
 
 def _unpack_rows(data: bytes, fmt: RawFormat, offset: int) -> np.ndarray:
@@ -484,7 +488,9 @@ def _finish(
     )
 
 
-def decode_raw_bytes(data: bytes | bytearray | memoryview, format: RawFormat) -> DecodedRaw:
+def decode_raw_bytes(  # pylint: disable=redefined-builtin
+    data: bytes | bytearray | memoryview, format: RawFormat
+) -> DecodedRaw:
     """Decode a headerless RAW buffer against the declared layout.
 
     The buffer must contain exactly ``header_bytes + height * row_stride``
@@ -516,8 +522,6 @@ def _decode_pgm(path: Path, fmt: RawFormat) -> DecodedRaw:
             "PGM containers carry their own header; header_bytes/row_stride_bytes "
             "must be unset for container input",
         )
-    from util.raw_io import read_raw_payload
-
     payload = read_raw_payload(path)
     if not payload.is_pgm:
         raise RawFormatError("source_format", f"{path}: not a PGM file")
@@ -554,7 +558,7 @@ def _decode_tiff(path: Path, fmt: RawFormat) -> DecodedRaw:
             "must be unset for container input",
         )
     try:
-        import tifffile as tiff
+        import tifffile as tiff  # pylint: disable=import-outside-toplevel
     except ImportError as exc:
         raise RawFormatError(
             "source_format", "tifffile is required for TIFF input"
@@ -609,7 +613,7 @@ def _decode_rawpy(path: Path, fmt: RawFormat) -> DecodedRaw:
             "must be unset for container input",
         )
     try:
-        import rawpy
+        import rawpy  # pylint: disable=import-outside-toplevel
     except ImportError as exc:
         raise RawFormatError(
             "source_format", "rawpy is required for this camera format"
@@ -710,7 +714,7 @@ def resolve_source_format(path: str | Path, declared: str = "auto") -> str:
     )
 
 
-def decode_raw(path: str | Path, format: RawFormat) -> DecodedRaw:
+def decode_raw(path: str | Path, format: RawFormat) -> DecodedRaw:  # pylint: disable=redefined-builtin
     """Decode a RAW/PGM/TIFF/camera file through the declared contract."""
     p = Path(path).expanduser().resolve()
     src = resolve_source_format(p, format.source_format)

@@ -26,6 +26,8 @@ import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from modules.tone_mapping.registry import ToneMappingError, resolve_tone_mapping
+from util.output_contract import OutputSpec
 from util.raw_decode import RawFormat, RawFormatError
 
 REQUIRED_CONFIG_KEYS = (
@@ -118,6 +120,7 @@ ABSENT: Any = _Missing()
 
 @dataclass(frozen=True)
 class ParameterSpec:
+    """Descriptor for one configurable parameter: path, type, bounds, default and docs."""
     path: str
     value_type: str
     default: Any = ABSENT
@@ -131,11 +134,13 @@ class ParameterSpec:
 
     @property
     def has_default(self) -> bool:
+        """True when the parameter declares a default value."""
         return self.default is not ABSENT
 
 
 @dataclass(frozen=True)
 class BlockSpec:
+    """Descriptor for one top-level config block."""
     block_id: str
     label: str
     sections: tuple[str, ...]
@@ -145,6 +150,7 @@ class BlockSpec:
 
 @dataclass(frozen=True)
 class ValidationIssue:
+    """One validation finding: config path, message and severity."""
     path: str
     message: str
     severity: str = "error"
@@ -156,7 +162,8 @@ _BASE_GAIN_ARRAY = [
 
 PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
     ParameterSpec("platform.filename", "str", default="frame_0000.raw", affected_stage="raw_input"),
-    ParameterSpec("platform.save_format", "str", default="png", choices=("png", "jpg", "tiff"), affected_stage="output"),
+    ParameterSpec("platform.save_format", "str", default="png", choices=("png", "jpg", "tiff"),
+                  affected_stage="output"),
     ParameterSpec("platform.short_output_names", "bool", default=True, affected_stage="output"),
     ParameterSpec("platform.debug_enabled", "bool", default=True, affected_stage="diagnostics"),
     ParameterSpec("platform.debug_log_level", "str", default="INFO",
@@ -164,13 +171,17 @@ PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
     ParameterSpec("platform.plot_histograms", "bool", default=True, affected_stage="diagnostics"),
     ParameterSpec("sensor_info.bayer_pattern", "str", default="gbrg",
                   choices=BAYER_PATTERN_CHOICES, affected_stage="raw_input"),
-    ParameterSpec("sensor_info.hdr_bit_depth", "int", default=24, units="bits", affected_stage="raw_input"),
+    ParameterSpec("sensor_info.hdr_bit_depth", "int", default=24, units="bits",
+                  affected_stage="raw_input"),
     ParameterSpec("sensor_info.bit_depth", "int", default=12, minimum=1, maximum=32,
                   units="bits", affected_stage="raw_input"),
     ParameterSpec("sensor_info.pipeline_rgb_bit_depth", "int", default=16, units="bits"),
-    ParameterSpec("sensor_info.width", "int", default=1920, minimum=1, units="px", affected_stage="raw_input"),
-    ParameterSpec("sensor_info.height", "int", default=1563, minimum=1, units="px", affected_stage="raw_input"),
-    ParameterSpec("sensor_info.output_bit_depth", "int", default=8, units="bits", affected_stage="output"),
+    ParameterSpec("sensor_info.width", "int", default=1920, minimum=1, units="px",
+                  affected_stage="raw_input"),
+    ParameterSpec("sensor_info.height", "int", default=1563, minimum=1, units="px",
+                  affected_stage="raw_input"),
+    ParameterSpec("sensor_info.output_bit_depth", "int", default=8, units="bits",
+                  affected_stage="output"),
     ParameterSpec("sensor_info.sensor", "str", default="base_camera"),
     ParameterSpec("sensor_info.endian_type", "str", default="ieee-be",
                   choices=VALID_ENDIAN_TYPES, affected_stage="raw_input"),
@@ -198,37 +209,57 @@ PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
     ParameterSpec("sensor_info.horizontal_flip", "bool", default=False, affected_stage="raw_input"),
     ParameterSpec("sensor_info.vertical_flip", "bool", default=False, affected_stage="raw_input"),
     ParameterSpec("crop.is_enable", "bool", default=False, affected_stage="crop"),
-    ParameterSpec("crop.crop_x_start", "int", default=1220, minimum=0, units="px", affected_stage="crop"),
-    ParameterSpec("crop.crop_y_start", "int", default=440, minimum=0, units="px", affected_stage="crop"),
-    ParameterSpec("crop.new_width", "int", default=300, minimum=1, units="px", affected_stage="crop"),
-    ParameterSpec("crop.new_height", "int", default=300, minimum=1, units="px", affected_stage="crop"),
-    ParameterSpec("dead_pixel_correction.is_enable", "bool", default=True, affected_stage="dead_pixel_correction"),
-    ParameterSpec("dead_pixel_correction.dp_threshold", "number", default=64, affected_stage="dead_pixel_correction"),
-    ParameterSpec("black_level_correction.is_enable", "bool", default=False, affected_stage="black_level_correction"),
-    ParameterSpec("black_level_correction.r_offset", "number", default=16, affected_stage="black_level_correction"),
-    ParameterSpec("black_level_correction.gr_offset", "number", default=16, affected_stage="black_level_correction"),
-    ParameterSpec("black_level_correction.gb_offset", "number", default=16, affected_stage="black_level_correction"),
-    ParameterSpec("black_level_correction.b_offset", "number", default=16, affected_stage="black_level_correction"),
+    ParameterSpec("crop.crop_x_start", "int", default=1220, minimum=0, units="px",
+                  affected_stage="crop"),
+    ParameterSpec("crop.crop_y_start", "int", default=440, minimum=0, units="px",
+                  affected_stage="crop"),
+    ParameterSpec("crop.new_width", "int", default=300, minimum=1, units="px",
+                  affected_stage="crop"),
+    ParameterSpec("crop.new_height", "int", default=300, minimum=1, units="px",
+                  affected_stage="crop"),
+    ParameterSpec("dead_pixel_correction.is_enable", "bool", default=True,
+                  affected_stage="dead_pixel_correction"),
+    ParameterSpec("dead_pixel_correction.dp_threshold", "number", default=64,
+                  affected_stage="dead_pixel_correction"),
+    ParameterSpec("black_level_correction.is_enable", "bool", default=False,
+                  affected_stage="black_level_correction"),
+    ParameterSpec("black_level_correction.r_offset", "number", default=16,
+                  affected_stage="black_level_correction"),
+    ParameterSpec("black_level_correction.gr_offset", "number", default=16,
+                  affected_stage="black_level_correction"),
+    ParameterSpec("black_level_correction.gb_offset", "number", default=16,
+                  affected_stage="black_level_correction"),
+    ParameterSpec("black_level_correction.b_offset", "number", default=16,
+                  affected_stage="black_level_correction"),
     ParameterSpec("companding.is_enable", "bool", default=True, affected_stage="decompanding"),
-    ParameterSpec("companding.pre_linearization_black_level", "number", default=240, affected_stage="decompanding"),
-    ParameterSpec("companding.post_linearization_black_level", "number", default=0, affected_stage="decompanding"),
+    ParameterSpec("companding.pre_linearization_black_level", "number", default=240,
+                  affected_stage="decompanding"),
+    ParameterSpec("companding.post_linearization_black_level", "number", default=0,
+                  affected_stage="decompanding"),
     ParameterSpec("digital_gain.is_enable", "bool", default=True, affected_stage="digital_gain"),
     ParameterSpec("digital_gain.is_auto", "bool", default=False, affected_stage="digital_gain"),
     ParameterSpec("digital_gain.gain_array", "list", default=tuple(_BASE_GAIN_ARRAY),
                   units="x", affected_stage="digital_gain"),
-    ParameterSpec("digital_gain.current_gain", "int", default=10, minimum=0, affected_stage="digital_gain"),
+    ParameterSpec("digital_gain.current_gain", "int", default=10, minimum=0,
+                  affected_stage="digital_gain"),
     ParameterSpec("digital_gain.exposure_correction_mode", "str",
                   choices=("direct", "step"), affected_stage="auto_exposure"),
-    ParameterSpec("lens_shading_correction.is_enable", "bool", default=False, affected_stage="lens_shading_correction"),
-    ParameterSpec("lens_shading_correction.r_k1", "number", default=4.25, affected_stage="lens_shading_correction"),
-    ParameterSpec("lens_shading_correction.r_k2", "number", default=4.08, affected_stage="lens_shading_correction"),
-    ParameterSpec("bayer_noise_reduction.is_enable", "bool", default=True, affected_stage="bayer_noise_reduction"),
+    ParameterSpec("lens_shading_correction.is_enable", "bool", default=False,
+                  affected_stage="lens_shading_correction"),
+    ParameterSpec("lens_shading_correction.r_k1", "number", default=4.25,
+                  affected_stage="lens_shading_correction"),
+    ParameterSpec("lens_shading_correction.r_k2", "number", default=4.08,
+                  affected_stage="lens_shading_correction"),
+    ParameterSpec("bayer_noise_reduction.is_enable", "bool", default=True,
+                  affected_stage="bayer_noise_reduction"),
     ParameterSpec("bayer_noise_reduction.filter_window", "int", default=5, minimum=1,
                   units="px", affected_stage="bayer_noise_reduction"),
-    ParameterSpec("auto_white_balance.is_enable", "bool", default=True, affected_stage="auto_white_balance"),
+    ParameterSpec("auto_white_balance.is_enable", "bool", default=True,
+                  affected_stage="auto_white_balance"),
     ParameterSpec("auto_white_balance.algorithm", "str", default="pca",
                   choices=("grey_world", "norm_2", "pca"), affected_stage="auto_white_balance"),
-    ParameterSpec("auto_white_balance.percentage", "number", default=3.5, affected_stage="auto_white_balance"),
+    ParameterSpec("auto_white_balance.percentage", "number", default=3.5,
+                  affected_stage="auto_white_balance"),
     ParameterSpec("auto_white_balance.underexposed_percentage", "number", default=0.05,
                   affected_stage="auto_white_balance"),
     ParameterSpec("auto_white_balance.overexposed_percentage", "number", default=0.05,
@@ -246,19 +277,25 @@ PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
                   affected_stage="demosaic"),
     ParameterSpec("color_correction_matrix.is_enable", "bool", default=True,
                   affected_stage="color_correction_matrix"),
-    ParameterSpec("gamma_correction.is_enable", "bool", default=True, affected_stage="gamma_correction"),
+    ParameterSpec("gamma_correction.is_enable", "bool", default=True,
+                  affected_stage="gamma_correction"),
     ParameterSpec("gamma_correction.curve", "str", default="srgb",
                   choices=("srgb", "gamma"), affected_stage="gamma_correction"),
-    ParameterSpec("gamma_correction.gamma", "number", default=2.2, affected_stage="gamma_correction"),
+    ParameterSpec("gamma_correction.gamma", "number", default=2.2,
+                  affected_stage="gamma_correction"),
     ParameterSpec("auto_exposure.is_enable", "bool", default=True, affected_stage="auto_exposure"),
-    ParameterSpec("auto_exposure.center_illuminance", "number", default=0.4, affected_stage="auto_exposure"),
-    ParameterSpec("auto_exposure.histogram_skewness", "number", default=0.9, affected_stage="auto_exposure"),
-    ParameterSpec("auto_exposure.target_luminance", "number", default=0.5, affected_stage="auto_exposure"),
+    ParameterSpec("auto_exposure.center_illuminance", "number", default=0.4,
+                  affected_stage="auto_exposure"),
+    ParameterSpec("auto_exposure.histogram_skewness", "number", default=0.9,
+                  affected_stage="auto_exposure"),
+    ParameterSpec("auto_exposure.target_luminance", "number", default=0.5,
+                  affected_stage="auto_exposure"),
     ParameterSpec("auto_exposure.exposure_correction_mode", "str",
                   choices=("direct", "step"), affected_stage="auto_exposure"),
     ParameterSpec("color_space_conversion.conv_standard", "int", default=2,
                   affected_stage="color_space_conversion"),
-    ParameterSpec("color_saturation_enhancement.is_enable", "bool", default=True, affected_stage="saturation"),
+    ParameterSpec("color_saturation_enhancement.is_enable", "bool", default=True,
+                  affected_stage="saturation"),
     ParameterSpec("color_saturation_enhancement.saturation_gain", "number", default=1.0,
                   units="x", affected_stage="saturation"),
     ParameterSpec("ldci.is_enable", "bool", default=False, affected_stage="ldci"),
@@ -268,38 +305,51 @@ PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
                   minimum=0.0, units="normalized", affected_stage="2d_noise_reduction"),
     ParameterSpec("oecf.output_bit_depth", "int", minimum=1.0, maximum=32.0,
                   affected_stage="oecf"),
-    ParameterSpec("output.model", "str", default="rgb", choices=("rgb", "ycbcr"), affected_stage="output"),
-    ParameterSpec("output.color_space", "str", default="srgb", choices=("srgb",), affected_stage="output"),
+    ParameterSpec("output.model", "str", default="rgb", choices=("rgb", "ycbcr"),
+                  affected_stage="output"),
+    ParameterSpec("output.color_space", "str", default="srgb", choices=("srgb",),
+                  affected_stage="output"),
     ParameterSpec("output.transfer", "str", default="srgb",
                   choices=("srgb", "rec709", "power", "linear"), affected_stage="output"),
     ParameterSpec("output.gamma", "number", default=2.2, minimum=0.0, affected_stage="output"),
     ParameterSpec("output.bit_depth", "int", default=8, affected_stage="output"),
     ParameterSpec("output.format", "str", default="png",
                   choices=("png", "jpeg", "tiff", "yuv"), affected_stage="output"),
-    ParameterSpec("output.matrix", "str", default="bt709", choices=("bt601", "bt709"), affected_stage="output"),
-    ParameterSpec("output.range", "str", default="full", choices=("full", "limited"), affected_stage="output"),
-    ParameterSpec("output.layout", "str", default="444", choices=("444", "422"), affected_stage="output"),
-    ParameterSpec("output.packing", "str", default="yuyv", choices=("yuyv", "uyvy"), affected_stage="output"),
+    ParameterSpec("output.matrix", "str", default="bt709", choices=("bt601", "bt709"),
+                  affected_stage="output"),
+    ParameterSpec("output.range", "str", default="full", choices=("full", "limited"),
+                  affected_stage="output"),
+    ParameterSpec("output.layout", "str", default="444", choices=("444", "422"),
+                  affected_stage="output"),
+    ParameterSpec("output.packing", "str", default="yuyv", choices=("yuyv", "uyvy"),
+                  affected_stage="output"),
     ParameterSpec("output.is_save", "bool", default=False, affected_stage="output"),
     ParameterSpec("ldci.clip_limit", "number", default=2.0, affected_stage="ldci"),
     ParameterSpec("ldci.wind", "int", default=128, affected_stage="ldci"),
     ParameterSpec("sharpen.is_enable", "bool", default=True, affected_stage="sharpen"),
     ParameterSpec("sharpen.sharpen_sigma", "number", default=3.0, affected_stage="sharpen"),
     ParameterSpec("sharpen.sharpen_strength", "number", default=1.0, affected_stage="sharpen"),
-    ParameterSpec("2d_noise_reduction.is_enable", "bool", default=False, affected_stage="noise_reduction_2d"),
-    ParameterSpec("2d_noise_reduction.window_size", "int", default=9, affected_stage="noise_reduction_2d"),
-    ParameterSpec("2d_noise_reduction.patch_size", "int", default=5, affected_stage="noise_reduction_2d"),
-    ParameterSpec("rgb_conversion.is_enable", "bool", default=True, affected_stage="rgb_conversion"),
+    ParameterSpec("2d_noise_reduction.is_enable", "bool", default=False,
+                  affected_stage="noise_reduction_2d"),
+    ParameterSpec("2d_noise_reduction.window_size", "int", default=9,
+                  affected_stage="noise_reduction_2d"),
+    ParameterSpec("2d_noise_reduction.patch_size", "int", default=5,
+                  affected_stage="noise_reduction_2d"),
+    ParameterSpec("rgb_conversion.is_enable", "bool", default=True,
+                  affected_stage="rgb_conversion"),
     ParameterSpec("scale.is_enable", "bool", default=False, affected_stage="scale"),
-    ParameterSpec("scale.new_width", "int", default=1280, minimum=1, units="px", affected_stage="scale"),
-    ParameterSpec("scale.new_height", "int", default=1024, minimum=1, units="px", affected_stage="scale"),
+    ParameterSpec("scale.new_width", "int", default=1280, minimum=1, units="px",
+                  affected_stage="scale"),
+    ParameterSpec("scale.new_height", "int", default=1024, minimum=1, units="px",
+                  affected_stage="scale"),
     ParameterSpec("scale.algorithm", "str", default="Bilinear",
                   choices=("Nearest_Neighbor", "Bilinear"), affected_stage="scale"),
     ParameterSpec("scale.upscale_method", "str", default="Bilinear",
                   choices=("Nearest_Neighbor", "Bilinear"), affected_stage="scale"),
     ParameterSpec("scale.downscale_method", "str", default="Bilinear",
                   choices=("Nearest_Neighbor", "Bilinear"), affected_stage="scale"),
-    ParameterSpec("yuv_conversion_format.is_enable", "bool", default=True, affected_stage="yuv_output"),
+    ParameterSpec("yuv_conversion_format.is_enable", "bool", default=True,
+                  affected_stage="yuv_output"),
     ParameterSpec("yuv_conversion_format.conv_type", "str", default="444",
                   choices=("444", "422"), affected_stage="yuv_output"),
     ParameterSpec("tone_mapping.is_enable", "bool", default=True, affected_stage="tone_mapping"),
@@ -387,6 +437,7 @@ BLOCK_SPECS: tuple[BlockSpec, ...] = tuple(
 
 
 def spec_map() -> dict[str, ParameterSpec]:
+    """Map each parameter path to its ParameterSpec."""
     return {p.path: p for p in PARAMETER_SPECS}
 
 
@@ -474,8 +525,6 @@ def normalize_config(mapping: Mapping[str, Any]) -> tuple[dict[str, Any], list[s
             )
 
     if "tone_mapping" in cfg:
-        from modules.tone_mapping.registry import ToneMappingError, resolve_tone_mapping
-
         try:
             resolved = resolve_tone_mapping(cfg)
         except (ToneMappingError, TypeError):
@@ -499,7 +548,7 @@ def _as_number(value: Any) -> float | None:
     return number
 
 
-def _section(config: Mapping[str, Any], key: str, issues: list[ValidationIssue]) -> Mapping[str, Any]:
+def _section(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = config.get(key)
     if not isinstance(value, Mapping):
         return {}
@@ -521,12 +570,19 @@ def validate_black_level_ownership(config: Mapping[str, Any]) -> list[Validation
             "black_level_correction.is_linear",
             "disable BLC rescaling before PWC; its knots use input sensor codes",
         ))
-    pre = pwc["pre_linearization_black_level"] if "pre_linearization_black_level" in pwc else pwc.get("pedestal", 0)
+    pre = (
+        pwc["pre_linearization_black_level"]
+        if "pre_linearization_black_level" in pwc
+        else pwc.get("pedestal", 0)
+    )
     if pre != 0:
-        issues.append(ValidationIssue(
-            "companding.pre_linearization_black_level",
-            "BLC and PWC cannot both subtract companded-domain black; set the PWC pre level (or pedestal) to 0",
-        ))
+        issues.append(
+            ValidationIssue(
+                "companding.pre_linearization_black_level",
+                "BLC and PWC cannot both subtract companded-domain black; "
+                "set the PWC pre level (or pedestal) to 0",
+            )
+        )
     if pwc.get("post_linearization_black_level", 0) != 0:
         issues.append(ValidationIssue(
             "companding.post_linearization_black_level",
@@ -554,15 +610,23 @@ def validate_config(
 
     version = config.get("schema_version")
     if version == 2:
-        from util.output_contract import OutputSpec
         try:
             OutputSpec.from_mapping(config.get("output"))
         except (ValueError, TypeError) as exc:
             issues.append(ValidationIssue("output", str(exc)))
-        for name in ("gamma_correction", "color_space_conversion", "rgb_conversion", "yuv_conversion_format"):
+        for name in (
+            "gamma_correction",
+            "color_space_conversion",
+            "rgb_conversion",
+            "yuv_conversion_format",
+        ):
             section = config.get(name)
             if isinstance(section, Mapping) and section.get("is_enable", False):
-                issues.append(ValidationIssue(name, "active legacy color sections are not supported in schema_version 2"))
+                issues.append(
+                    ValidationIssue(
+                        name, "active legacy color sections are not supported in schema_version 2"
+                    )
+                )
     required = (
         NATIVE_REQUIRED_CONFIG_KEYS
         if isinstance(version, int) and not isinstance(version, bool) and version == 2
@@ -574,10 +638,10 @@ def validate_config(
                 ValidationIssue(key, f"section '{key}' must be a mapping")
             )
 
-    sensor = _section(config, "sensor_info", issues)
-    crop = _section(config, "crop", issues)
-    wb = _section(config, "white_balance", issues)
-    dg = _section(config, "digital_gain", issues)
+    sensor = _section(config, "sensor_info")
+    crop = _section(config, "crop")
+    wb = _section(config, "white_balance")
+    dg = _section(config, "digital_gain")
 
     width = _as_number(sensor.get("width"))
     height = _as_number(sensor.get("height"))
@@ -698,7 +762,7 @@ def validate_config(
             }
             if path not in reported:
                 issues.append(ValidationIssue(path, str(exc)))
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             issues.append(
                 ValidationIssue("sensor_info", f"invalid RAW input contract: {exc}")
             )
@@ -706,9 +770,19 @@ def validate_config(
     r_gain = _as_number(wb.get("r_gain"))
     b_gain = _as_number(wb.get("b_gain"))
     if r_gain is None or r_gain < 0 or (version != 2 and r_gain == 0):
-        issues.append(ValidationIssue("white_balance.r_gain", "WB r_gain must be finite and nonnegative (positive in legacy configs)"))
+        issues.append(
+            ValidationIssue(
+                "white_balance.r_gain",
+                "WB r_gain must be finite and nonnegative (positive in legacy configs)",
+            )
+        )
     if b_gain is None or b_gain < 0 or (version != 2 and b_gain == 0):
-        issues.append(ValidationIssue("white_balance.b_gain", "WB b_gain must be finite and nonnegative (positive in legacy configs)"))
+        issues.append(
+            ValidationIssue(
+                "white_balance.b_gain",
+                "WB b_gain must be finite and nonnegative (positive in legacy configs)",
+            )
+        )
 
     gain_raw = dg.get("gain_array")
     if gain_raw is None:
@@ -781,10 +855,8 @@ def validate_config(
         issues.append(ValidationIssue("input.raw", "Load a test image before Process"))
 
     try:
-        from modules.tone_mapping.registry import resolve_tone_mapping
-
         resolve_tone_mapping(config)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         issues.append(
             ValidationIssue("tone_mapping", f"tone_mapping resolution failed: {exc}")
         )
