@@ -17,6 +17,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from modules.tone_mapping import operators
+
 OPERATOR_PARAMETERS: dict[str, dict[str, float]] = {
     "aces_fitted": {},
     "hable": {"exposure_bias": 2.0, "white_point": 11.2},
@@ -71,8 +73,6 @@ def _check_curve_representable(
     operator: str, params: Mapping[str, float], gain: float, lut_domain: float,
     normalize_output: bool,
 ) -> None:
-    from modules.tone_mapping import operators
-
     scalar = {
         "aces_fitted": operators.aces_fitted,
         "hable": operators.hable,
@@ -238,13 +238,16 @@ class ToneMappingSpec:
         if backend == "fixed":
             w = (merged["knee"] / merged["strength"]) / min(gain, lut_domain)
             if not math.isfinite(w) or w <= 0:
-                raise ToneMappingError("fixed knee/(strength*effective_gain) must be representable positive")
+                raise ToneMappingError(
+                    "fixed knee/(strength*effective_gain) must be representable positive"
+                )
         _check_curve_representable(
             operator, merged, gain, lut_domain, self.normalize_output
         )
         object.__setattr__(self, "parameters", tuple(sorted(merged.items())))
 
     def parameters_map(self) -> dict[str, float]:
+        """Parameters as a plain dict."""
         return dict(self.parameters)
 
 
@@ -301,7 +304,9 @@ def _num(section: Mapping[str, Any], key: str, default: float) -> float:
 
 
 def _alias_number(section: Mapping[str, Any], primary: str, fallback: str, default: float) -> float:
-    return _num(section, primary, default) if primary in section else _num(section, fallback, default)
+    return (
+        _num(section, primary, default) if primary in section else _num(section, fallback, default)
+    )
 
 
 def _strict_bool(section: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -542,7 +547,9 @@ def resolve_tone_mapping(full_config: Mapping[str, Any]) -> ResolvedToneMapping:
         }
         unknown = set(tm) - allowed
         if unknown:
-            raise ToneMappingError(f"unsupported canonical tone_mapping fields: {sorted(unknown, key=str)}")
+            raise ToneMappingError(
+                f"unsupported canonical tone_mapping fields: {sorted(unknown, key=str)}"
+            )
         if "backend" not in tm:
             raise ToneMappingError(
                 "canonical tone_mapping.operator requires an explicit "
@@ -601,7 +608,9 @@ def resolve_tone_mapping(full_config: Mapping[str, Any]) -> ResolvedToneMapping:
     )
 
 
-def placement_legacy(tm: Mapping[str, Any], section: Mapping[str, Any]) -> str:
+def placement_legacy(  # pylint: disable=unused-argument
+    tm: Mapping[str, Any], section: Mapping[str, Any]
+) -> str:
     """Legacy placement: the pre-demosaic boolean wins over section flags."""
     if _strict_bool(tm, "tone_mapping_before_demosaic", True):
         return "pre_demosaic"

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 File: isp_pipeline.py
 Description: Executes the complete pipeline
@@ -6,9 +7,14 @@ Author: Brian Deegan (based in part on 10xEngineers / Infinite-ISP)
 ------------------------------------------------------------
 """
 
+import copy
+import dataclasses
+import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, cast
+
 import numpy as np
 
 try:
@@ -20,12 +26,10 @@ try:
     import tifffile as tiff
 except ImportError:
     tiff = None
-import os
 
 import util.utils as util
-import copy
-import dataclasses
-
+from util.bayer_repair import green_zero_fraction, repair_zero_green_cfa
+from util.color import adjust_saturation, encode_transfer, luminance
 from util.config_merge import (
     ConfigPathArg,
     format_config_source,
@@ -33,34 +37,15 @@ from util.config_merge import (
     normalize_config_paths,
     pipeline_config_paths,
 )
-from util.config_schema import NATIVE_REQUIRED_CONFIG_KEYS, REQUIRED_CONFIG_KEYS, normalize_config, validate_black_level_ownership
-from modules.tone_mapping.registry import ResolvedToneMapping
-
-from util.pipeline_types import (
-    FrameMetadata,
-    ProcessingCancelled,
-    ProcessingOptions,
-    ProcessingState,
-    StageEvent,
+from util.config_schema import (
+    NATIVE_REQUIRED_CONFIG_KEYS,
+    REQUIRED_CONFIG_KEYS,
+    normalize_config,
+    validate_black_level_ownership,
 )
-from util.bayer_repair import green_zero_fraction, repair_zero_green_cfa
 from util import metering_roi
-from util.raw_io import (
-    alignment_from_sensor_info,
-    apply_data_alignment,
-    apply_raw_flips,
-    flips_from_sensor_info,
-    read_raw_payload,
-)
-from util.raw_decode import (
-    RawFormat,
-    decode_raw,
-    decode_raw_bytes,
-    resolve_source_format,
-)
-from util.debug_utils import DebugLogger
-from util.debug_utils import get_debug_logger, set_global_debug_enabled
-from util.histogram_utils import plot_histogram_comparison, estimate_dynamic_range
+from util.debug_utils import DebugLogger, get_debug_logger, set_global_debug_enabled
+from util.histogram_utils import estimate_dynamic_range, plot_histogram_comparison
 from util.isp_types import (
     AWBGains,
     AutoExposureConfig,
@@ -96,32 +81,68 @@ from util.isp_types import (
     WhiteBalanceConfig,
     YUVConversionFormatConfig,
 )
+from util.luma import replace_luminance
+from util.native_array import as_float32
+from util.native_output import output_metadata, preview_from_native, quantize_output
+from util.output_contract import OutputSpec
+import util.output_writer as output_writer
+from util.pipeline_migration import migrate_pipeline_config
+from util.pipeline_types import (
+    FrameMetadata,
+    ProcessingCancelled,
+    ProcessingOptions,
+    ProcessingState,
+    StageEvent,
+)
+from util.raw_decode import (
+    RawFormat,
+    decode_raw,
+    decode_raw_bytes,
+    resolve_source_format,
+)
+from util.raw_io import (
+    alignment_from_sensor_info,
+    apply_data_alignment,
+    apply_raw_flips,
+    flips_from_sensor_info,
+    read_raw_payload,
+)
+from util.signal_range import linear_code_range
 
 # Module imports
-from modules.crop.crop import Crop
-from modules.dead_pixel_correction.dead_pixel_correction import DeadPixelCorrection as DPC
-from modules.black_level_correction.black_level_correction import BlackLevelCorrection as BLC
-from modules.pwc_generation.pwc_generation import PiecewiseCurve as PWC
-from modules.oecf.oecf import OECF
-from modules.digital_gain.digital_gain import DigitalGain as DG
-from modules.lens_shading_correction.lens_shading_correction import LensShadingCorrection as LSC
-from modules.bayer_noise_reduction.bayer_noise_reduction import BayerNoiseReduction as BNR
+from modules.auto_exposure.auto_exposure import AutoExposure as AE
+from modules.auto_exposure import smooth_control as smooth_ae
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
 from modules.auto_white_balance import temporal as awb_temporal
-from modules.auto_exposure import smooth_control as smooth_ae
-from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
-from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
-from modules.demosaic.demosaic import Demosaic
-from modules.color_correction_matrix.color_correction_matrix_optimized import ColorCorrectionMatrixOptimized as CCMOPT
-from modules.gamma_correction.gamma_correction import GammaCorrection as GC
-from modules.auto_exposure.auto_exposure import AutoExposure as AE
+from modules.bayer_noise_reduction.bayer_noise_reduction import BayerNoiseReduction as BNR
+from modules.black_level_correction.black_level_correction import BlackLevelCorrection as BLC
+from modules.color_correction_matrix.color_correction_matrix_optimized import (
+    ColorCorrectionMatrixOptimized as CCMOPT,
+)
 from modules.color_space_conversion.color_space_conversion import ColorSpaceConversion as CSC
+from modules.crop.crop import Crop
+from modules.dead_pixel_correction.dead_pixel_correction import DeadPixelCorrection as DPC
+from modules.demosaic.demosaic import Demosaic
+from modules.digital_gain.digital_gain import DigitalGain as DG
+from modules.gamma_correction.gamma_correction import GammaCorrection as GC
+from modules.ldci.clahe import apply_luma as _clahe
 from modules.ldci.ldci import LDCI
 from modules.ldci.ldci_rgb import apply_ldci_rgb8
-from modules.sharpen.sharpen import Sharpening as SHARP
+from modules.lens_shading_correction.lens_shading_correction import LensShadingCorrection as LSC
 from modules.noise_reduction_2d.noise_reduction_2d import NoiseReduction2d as NR2D
+from modules.noise_reduction_2d.non_local_means import apply_luma as _nl
+from modules.oecf.oecf import OECF
+from modules.pwc_generation.pwc_generation import PiecewiseCurve as PWC
 from modules.rgb_conversion.rgb_conversion import RGBConversion as RGBC
 from modules.scale.scale import Scale
+from modules.sharpen.sharpen import Sharpening as SHARP
+from modules.sharpen.unsharp_masking import apply_luma as _ush
+from modules.tone_mapping import adaptive_white
+from modules.tone_mapping.diagnostics import plot_curve, save_mapped_output
+from modules.tone_mapping.native import map_native, map_native_max_blend, map_native_max_rgb
+from modules.tone_mapping.registry import ResolvedToneMapping, resolve_tone_mapping
+from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
+from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
 from modules.yuv_conv_format.yuv_conv_format import YUVConvFormat as YUV_C
 
 # HDR Image Reading Functions
@@ -187,19 +208,19 @@ def read_hdr_uint16(
 
 def analyze_file_size(file_path: str, logger=None) -> tuple[int, int]:
     """Analyze file size to suggest possible dimensions"""
-    import logging
-
     log = logger or logging.getLogger("BrilliantISP.RawLoader")
     file_size = Path(file_path).stat().st_size
-    log.debug(f"File size: {file_size:,} bytes")
+    log.debug("File size: %s bytes", format(file_size, ","))
     pixels_3byte = file_size // 3
-    log.debug(f"Pixels (3-byte method): {pixels_3byte:,}")
+    log.debug("Pixels (3-byte method): %s", format(pixels_3byte, ","))
     pixels_uint16 = file_size // 4
-    log.debug(f"Pixels (uint16 method): {pixels_uint16:,}")
+    log.debug("Pixels (uint16 method): %s", format(pixels_uint16, ","))
     return pixels_3byte, pixels_uint16
 
 
-def infer_uint16_bayer_shape(file_size: int, config_width: int, config_height: int) -> tuple[int, int]:
+def infer_uint16_bayer_shape(
+    file_size: int, config_width: int, config_height: int
+) -> tuple[int, int]:
     """
     Infer (width, height) for a uint16 Bayer buffer when file size != config W*H*2
     (e.g. bin2raw with --trim-top-rows / --image-offset-bytes).
@@ -241,7 +262,7 @@ class BrilliantISP:
         self,
         data_path: str,
         config_path: ConfigPathArg | Mapping[str, Any],
-        outFileName: str,
+        outFileName: str,  # pylint: disable=invalid-name
         output_path: str | None = None,
         *,
         options: ProcessingOptions | None = None,
@@ -269,7 +290,7 @@ class BrilliantISP:
             self.output_path = str(options.output_dir)
         else:
             self.output_path = output_path if output_path else "out_frames/"
-        self.outFileName = outFileName
+        self.outFileName = outFileName  # pylint: disable=invalid-name
         self.logger: DebugLogger
         self.platform: PlatformConfig | None = None
         self.config_notices: list[str] = []
@@ -339,7 +360,6 @@ class BrilliantISP:
         # Snapshot the resolved source BEFORE diagnostics suppression so the
         # migration report keeps the requested legacy flags.
         self.source_config_original = copy.deepcopy(normalized)
-        from util.pipeline_migration import migrate_pipeline_config
         migrated, self.migration_report = migrate_pipeline_config(
             normalized, canonicalize_tone_mapping=False
         )
@@ -382,7 +402,9 @@ class BrilliantISP:
                 Path(cast(Path, self.options.output_dir)) / "pipeline.log"
             )
         elif "output_dir" not in self.platform:
-            self.platform["output_dir"] = "module_output"  # Directory for module debug outputs (curves, etc)
+            self.platform["output_dir"] = (
+                "module_output"  # Directory for module debug outputs (curves, etc)
+            )
         self.platform["final_output_dir"] = self.output_path
         self.raw_file = self.platform["filename"]
         self.render_3a = self.platform["render_3a"]
@@ -408,30 +430,41 @@ class BrilliantISP:
         self.parm_wbc.setdefault("is_auto", self.parm_awb["is_enable"])
         self.parm_dem: DemosaicConfig = c_yaml["demosaic"]
         self.parm_ae: AutoExposureConfig = c_yaml["auto_exposure"]
-        self.parm_dga["exposure_correction_mode"] = self.parm_ae.get("exposure_correction_mode", "step")
+        self.parm_dga["exposure_correction_mode"] = self.parm_ae.get(
+            "exposure_correction_mode", "step"
+        )
         self.parm_ccm: ColorCorrectionMatrixConfig = c_yaml["color_correction_matrix"]
-        self.parm_gmc: GammaCorrectionConfig = cast(GammaCorrectionConfig, c_yaml.get("gamma_correction", {}))
+        self.parm_gmc: GammaCorrectionConfig = cast(
+            GammaCorrectionConfig, c_yaml.get("gamma_correction", {})
+        )
         self.param_durand = c_yaml.get("hdr_durand", {})
         self.param_aces = c_yaml.get("aces", {})
-        self.parm_csc: ColorSpaceConversionConfig = cast(ColorSpaceConversionConfig, c_yaml.get("color_space_conversion", {}))
+        self.parm_csc: ColorSpaceConversionConfig = cast(
+            ColorSpaceConversionConfig, c_yaml.get("color_space_conversion", {})
+        )
         self.parm_cse: ColorSaturationEnhancementConfig = c_yaml["color_saturation_enhancement"]
         self.parm_ldci: LDCIConfig = c_yaml["ldci"]
         self.parm_sha: SharpenConfig = c_yaml["sharpen"]
         self.parm_2dn: NoiseReduction2DConfig = c_yaml["2d_noise_reduction"]
-        self.parm_rgb: RGBConversionConfig = cast(RGBConversionConfig, c_yaml.get("rgb_conversion", {}))
+        self.parm_rgb: RGBConversionConfig = cast(
+            RGBConversionConfig, c_yaml.get("rgb_conversion", {})
+        )
         self.parm_sca: ScaleConfig = c_yaml["scale"]
         self.parm_cro: CropConfig = c_yaml["crop"]
-        self.parm_yuv: YUVConversionFormatConfig = cast(YUVConversionFormatConfig, c_yaml.get("yuv_conversion_format", {}))
+        self.parm_yuv: YUVConversionFormatConfig = cast(
+            YUVConversionFormatConfig, c_yaml.get("yuv_conversion_format", {})
+        )
         self.c_yaml = c_yaml
         self.platform["rgb_output"] = self.parm_rgb.get("is_enable", True)
         initial_in_file = Path(self.raw_file).stem
         self.platform["in_file"] = initial_in_file
         self.platform["out_file"] = (
-            initial_in_file if self.platform.get("short_output_names", False) else "Out_" + initial_in_file
+            initial_in_file
+            if self.platform.get("short_output_names", False)
+            else "Out_" + initial_in_file
         )
         self.bit_depth = self.sensor_info["bit_depth"]
         self.tone_mapping: ToneMappingConfig = c_yaml["tone_mapping"]
-        from modules.tone_mapping.registry import resolve_tone_mapping
         resolved_tm = resolve_tone_mapping(c_yaml)
         for notice in resolved_tm.notices:
             if notice not in self.config_notices:
@@ -448,8 +481,14 @@ class BrilliantISP:
         )
         self.param_aces = c_yaml.get("aces", {})
         # reinhard_integer section, or legacy integer_tmo section name
-        integer_sections = ("integer_tmo", "reinhard_integer") if legacy_mapper == "integer_tmo" else ("reinhard_integer", "integer_tmo")
-        self.param_integer_tmo = c_yaml.get(integer_sections[0], c_yaml.get(integer_sections[1], {}))
+        integer_sections = (
+            ("integer_tmo", "reinhard_integer")
+            if legacy_mapper == "integer_tmo"
+            else ("reinhard_integer", "integer_tmo")
+        )
+        self.param_integer_tmo = c_yaml.get(
+            integer_sections[0], c_yaml.get(integer_sections[1], {})
+        )
         self.param_aces_integer = c_yaml.get("aces_integer", {})
         self.param_hable = c_yaml.get("hable", {})
         self.param_hable_integer = c_yaml.get("hable_integer", {})
@@ -611,7 +650,11 @@ class BrilliantISP:
             self._emit(event)
             raise
         elapsed = time.perf_counter_ns() - start
-        image = result[0] if isinstance(result, tuple) and result and isinstance(result[0], np.ndarray) else result
+        image = (
+            result[0]
+            if isinstance(result, tuple) and result and isinstance(result[0], np.ndarray)
+            else result
+        )
         event = StageEvent(
             run_id=run_id,
             stage_id=stage_id,
@@ -637,7 +680,9 @@ class BrilliantISP:
     def _run_pre_digital_gain(self) -> np.ndarray:
         """Crop -> DPC -> BLC -> green repair -> PWC -> OECF (shared front half)."""
         if self.raw is None or self.platform is None or self.sensor_info is None:
-            raise RuntimeError("RAW image and configuration must be loaded before running the pipeline.")
+            raise RuntimeError(
+                "RAW image and configuration must be loaded before running the pipeline."
+            )
         platform = self.platform
         sensor_info = self.sensor_info
         raw = self.raw
@@ -728,17 +773,16 @@ class BrilliantISP:
         ``mirror_gain`` is retained for call compatibility; automatic state
         never replaces the effective configuration's manual gain controls.
         """
+        del mirror_gain
         if self.platform is None or self.sensor_info is None or self.c_yaml is None:
             raise RuntimeError("Configuration must be loaded before running the pipeline.")
         platform = self.platform
-        from util.signal_range import linear_code_range
         sensor_info = cast(SensorInfo, dict(self.sensor_info))
         sensor_info["hdr_bit_depth"] = linear_code_range(self.c_yaml).bit_depth
 
         # =====================================================================
         # Digital Gain (receives OECF output per pipeline order: PWC -> OECF -> DG)
         # Digital Gain
-        from util.native_array import as_float32
         smooth_gain = getattr(self, "_smooth_gain", None)
 
         def _dg() -> tuple[np.ndarray, int]:
@@ -750,9 +794,16 @@ class BrilliantISP:
                 return as_float32(scaled, name="digital_gain"), nearest
             config = cast(DigitalGainConfig, dict(self.parm_dga))
             config["ae_feedback"] = None
-            config["current_gain"] = int(self.parm_dga["current_gain"]) if gain_index is None else gain_index
-            if gain_index is None and self.processing_state and self.parm_dga.get("is_enable", True) \
-                    and self.parm_dga.get("is_auto", False) and self.processing_state.digital_gain_index is not None:
+            config["current_gain"] = (
+                int(self.parm_dga["current_gain"]) if gain_index is None else gain_index
+            )
+            if (
+                gain_index is None
+                and self.processing_state
+                and self.parm_dga.get("is_enable", True)
+                and self.parm_dga.get("is_auto", False)
+                and self.processing_state.digital_gain_index is not None
+            ):
                 config["current_gain"] = self.processing_state.digital_gain_index
             dga = DG(oecf_raw, platform, sensor_info, config)
             return dga.compute_linear()
@@ -795,7 +846,9 @@ class BrilliantISP:
             self.last_awb_count = awb.sample_count
             self.last_awb_raw_estimate = (float(gains[0]), float(gains[1]))
             if awb.last_status == "estimated" and awb_temporal.is_active(self.parm_awb):
-                gains = awb_temporal.filter_gains(gains, hint, self.parm_awb, input_gain=self.last_awb_input_gain)
+                gains = awb_temporal.filter_gains(
+                    gains, hint, self.parm_awb, input_gain=self.last_awb_input_gain
+                )
             return gains
 
         self.awb_gains = cast(
@@ -966,9 +1019,13 @@ class BrilliantISP:
                     self.raw = read_hdr_3byte(raw_path, width, height, byte_order, data=raw_bytes)
                     if self.raw is None:
                         raise RuntimeError(
-                            f"Raw file too small for 3-byte HDR: expected {expected_size_3byte} bytes, " f"got {file_size}"
+                            "Raw file too small for 3-byte HDR: expected "
+                            f"{expected_size_3byte} bytes, "
+                            f"got {file_size}"
                         )
-                    self.logger.info(f"Successfully loaded using 3-byte HDR method ({byte_order} endian)")
+                    self.logger.info(
+                        f"Successfully loaded using 3-byte HDR method ({byte_order} endian)"
+                    )
                     self._apply_sensor_flips()
                     return
 
@@ -977,9 +1034,13 @@ class BrilliantISP:
                     self.raw = read_hdr_uint16(raw_path, width, height, byte_order, data=raw_bytes)
                     if self.raw is None:
                         raise RuntimeError(
-                            f"Raw file too small for uint16 HDR: expected {expected_size_uint16} bytes, " f"got {file_size}"
+                            "Raw file too small for uint16 HDR: expected "
+                            f"{expected_size_uint16} bytes, "
+                            f"got {file_size}"
                         )
-                    self.logger.info(f"Successfully loaded using uint16 HDR method ({byte_order} endian)")
+                    self.logger.info(
+                        f"Successfully loaded using uint16 HDR method ({byte_order} endian)"
+                    )
                     self._apply_sensor_flips()
                     return
 
@@ -1005,10 +1066,14 @@ class BrilliantISP:
                         sensor["height"] = load_h
                 need_bytes = load_w * load_h * 2
                 if file_size < need_bytes:
-                    raise RuntimeError(f"Raw file too small: need {need_bytes} bytes for {load_w}x{load_h}, got {file_size}")
+                    raise RuntimeError(
+                        f"Raw file too small: need {need_bytes} bytes for {load_w}x{load_h}, "
+                        f"got {file_size}"
+                    )
                 if file_size > need_bytes:
                     self.logger.warning(
-                        f"Raw file is {file_size - need_bytes} bytes longer than {load_w}x{load_h}x2; "
+                        f"Raw file is {file_size - need_bytes} bytes longer than "
+                        f"{load_w}x{load_h}x2; "
                         f"truncating to {need_bytes} bytes"
                     )
                 et = str(sensor.get("endian_type", "")).lower()
@@ -1018,13 +1083,23 @@ class BrilliantISP:
                     # ieee-be / big / omitted (legacy default was always big-endian)
                     raw_dtype = ">u2"
                 count = load_w * load_h
-                self.raw = np.frombuffer(raw_bytes, dtype=raw_dtype, count=count).reshape((load_h, load_w)).copy()
+                self.raw = (
+                    np.frombuffer(raw_bytes, dtype=raw_dtype, count=count)
+                    .reshape((load_h, load_w))
+                    .copy()
+                )
             else:
                 # For 8-bit or lower, use original method
-                self.raw = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((height, width)).astype(np.uint16)
+                self.raw = (
+                    np.frombuffer(raw_bytes, dtype=np.uint8)
+                    .reshape((height, width))
+                    .astype(np.uint16)
+                )
         elif suffix in {".tiff", ".tif"}:
             if tiff is None:
-                raise ImportError("tifffile is required to load TIFF files. Install it with: pip install tifffile")
+                raise ImportError(
+                    "tifffile is required to load TIFF files. Install it with: pip install tifffile"
+                )
             # Load tiff file
             img = tiff.imread(raw_path)
             self.logger.info(f"Image shape: {img.shape}")
@@ -1098,7 +1173,8 @@ class BrilliantISP:
                 shift = max(0, container_bits - bit_depth)
             self.raw = aligned
             self.logger.info(
-                f"Applied data_alignment={alignment} " f"(>>{shift} for {bit_depth}-bit in {container_bits}-bit container)"
+                f"Applied data_alignment={alignment} "
+                f"(>>{shift} for {bit_depth}-bit in {container_bits}-bit container)"
             )
         hflip, vflip = flips_from_sensor_info(self.sensor_info)
         if hflip or vflip:
@@ -1145,10 +1221,13 @@ class BrilliantISP:
         oecf_raw = self._run_pre_digital_gain()
 
         # =====================================================================
-        # Digital Gain → … → Auto-Exposure (2nd pass for direct AE: pass 1 meters, pass 2 applies new index)
-        # rerun_from_digital_gain defaults True when omitted so direct mode actually affects this frame.
+        # Digital Gain → … → Auto-Exposure (2nd pass for direct AE: pass 1 meters,
+        # pass 2 applies new index). rerun_from_digital_gain defaults True when
+        # omitted so direct mode actually affects this frame.
         # Requires DG enabled + auto: otherwise current_gain must stay under manual control.
-        dg_auto_ok = bool(self.parm_dga.get("is_enable", True)) and bool(self.parm_dga.get("is_auto", False))
+        dg_auto_ok = bool(self.parm_dga.get("is_enable", True)) and bool(
+            self.parm_dga.get("is_auto", False)
+        )
         max_ae_passes = (
             2
             if (
@@ -1170,7 +1249,7 @@ class BrilliantISP:
 
             # =====================================================================
             # HDR tone mapping before Demosaicing
-            def _tone_mapping_pre() -> np.ndarray:
+            def _tone_mapping_pre(wb_raw: np.ndarray = wb_raw) -> np.ndarray:
                 if self.tone_mapping_before_demosaic:
                     tone_mapper = tone_mapping(wb_raw, pipeline_self=cast(ToneMappingContext, self))
                     hdr = tone_mapper.execute()
@@ -1183,8 +1262,10 @@ class BrilliantISP:
 
             # =====================================================================
             # CFA demosaicing
-            def _demosaic() -> np.ndarray:
-                cfa_inter = Demosaic(cast(RawBayerImage, hdr_raw), platform, sensor_info, self.parm_dem)
+            def _demosaic(hdr_raw: np.ndarray = hdr_raw) -> np.ndarray:
+                cfa_inter = Demosaic(
+                    cast(RawBayerImage, hdr_raw), platform, sensor_info, self.parm_dem
+                )
                 out = cfa_inter.execute()
                 self.logger.info(f"Demosaiced Image mean: {np.mean(out)}")
                 return cast(np.ndarray, out)
@@ -1194,7 +1275,7 @@ class BrilliantISP:
             # =====================================================================
             # Color correction matrix
             # Use optimized version for better performance
-            def _ccm() -> np.ndarray:
+            def _ccm(demos_img: np.ndarray = demos_img) -> np.ndarray:
                 ccm = CCMOPT(demos_img, platform, sensor_info, self.parm_ccm)
                 out = ccm.execute()
                 self.logger.info(f"CCM Image mean: {np.mean(out)}")
@@ -1204,9 +1285,11 @@ class BrilliantISP:
 
             # =====================================================================
             # HDR tone mapping after Demosaicing
-            def _tone_mapping_post() -> np.ndarray:
+            def _tone_mapping_post(ccm_img: np.ndarray = ccm_img) -> np.ndarray:
                 if not self.tone_mapping_before_demosaic:
-                    tone_mapper = tone_mapping(ccm_img, pipeline_self=cast(ToneMappingContext, self))
+                    tone_mapper = tone_mapping(
+                        ccm_img, pipeline_self=cast(ToneMappingContext, self)
+                    )
                     mapped = tone_mapper.execute()
                     self.logger.info(f"HDR Image mean: {np.mean(mapped)}")
                     return cast(np.ndarray, mapped)
@@ -1219,9 +1302,10 @@ class BrilliantISP:
             # This provides maximum precision for exposure metering
             ae_holder: list[AE] = []
 
-            def _ae() -> int | None:
+            def _ae(ccm_img: np.ndarray = ccm_img) -> int | None:
                 aef = AE(ccm_img, sensor_info, self.parm_ae)
-                ae_holder.append(aef)
+                # _run_stage calls this immediately, inside the same iteration.
+                ae_holder.append(aef)  # pylint: disable=cell-var-from-loop
                 return cast(int | None, aef.execute())
 
             self.ae_feedback = self._run_stage("auto_exposure", _ae, ae_pass=ae_pass)
@@ -1253,9 +1337,11 @@ class BrilliantISP:
         # This differs from Infinite-ISP which uses gamma for bit conversion
         # See: GAMMA_CORRECTION_FINAL_SOLUTION.md for rationale
         def _linear_to_8bit() -> np.ndarray:
-            self.logger.info(f"Converting 16-bit linear RGB to 8-bit linear RGB for YUV processing")
+            self.logger.info("Converting 16-bit linear RGB to 8-bit linear RGB for YUV processing")
             self.logger.info(f"  Input range: [{np.min(ccm_img)}, {np.max(ccm_img)}]")
-            linear = np.clip((ccm_img.astype(np.float32) / 65535.0 * 255.0), 0, 255).astype(np.uint8)
+            linear = np.clip((ccm_img.astype(np.float32) / 65535.0 * 255.0), 0, 255).astype(
+                np.uint8
+            )
             self.logger.info(f"  Output range: [{np.min(linear)}, {np.max(linear)}]")
             return linear
 
@@ -1415,7 +1501,9 @@ class BrilliantISP:
             image_height, image_width, _ = out_dim
             yuv_custom_format = self.parm_yuv["conv_type"]
 
-            yuv_conv = util.get_image_from_yuv_format_conversion(yuv_conv, image_height, image_width, yuv_custom_format)
+            yuv_conv = util.get_image_from_yuv_format_conversion(
+                yuv_conv, image_height, image_width, yuv_custom_format
+            )
 
             rgbc.yuv_img = yuv_conv
             out_rgb = rgbc.yuv_to_rgb()
@@ -1453,21 +1541,34 @@ class BrilliantISP:
             try:
                 # Estimate dynamic range of input (after decompanding)
                 input_dr = estimate_dynamic_range(self.decompanded_img)
-                self.logger.info(f"Input Dynamic Range (after decompanding): {input_dr['dynamic_range_ev']:.2f} EV")
-                self.logger.info(f"Input Min: {input_dr['min_val']:.0f}, Max: {input_dr['max_val']:.0f}")
                 self.logger.info(
-                    f"Input Percentiles (0.1%, 99.9%): {input_dr['percentile_min']:.0f}, {input_dr['percentile_max']:.0f}"
+                    "Input Dynamic Range (after decompanding): "
+                    f"{input_dr['dynamic_range_ev']:.2f} EV"
                 )
-                self.logger.info(f"Input Bit Depth Utilized: {input_dr['bit_depth_utilized']:.1f} bits")
+                self.logger.info(
+                    f"Input Min: {input_dr['min_val']:.0f}, Max: {input_dr['max_val']:.0f}"
+                )
+                self.logger.info(
+                    f"Input Percentiles (0.1%, 99.9%): {input_dr['percentile_min']:.0f}, "
+                    f"{input_dr['percentile_max']:.0f}"
+                )
+                self.logger.info(
+                    f"Input Bit Depth Utilized: {input_dr['bit_depth_utilized']:.1f} bits"
+                )
 
                 # Estimate dynamic range of output
                 output_dr = estimate_dynamic_range(out_rgb)
                 self.logger.info(f"Output Dynamic Range: {output_dr['dynamic_range_ev']:.2f} EV")
-                self.logger.info(f"Output Min: {output_dr['min_val']:.0f}, Max: {output_dr['max_val']:.0f}")
                 self.logger.info(
-                    f"Output Percentiles (0.1%, 99.9%): {output_dr['percentile_min']:.0f}, {output_dr['percentile_max']:.0f}"
+                    f"Output Min: {output_dr['min_val']:.0f}, Max: {output_dr['max_val']:.0f}"
                 )
-                self.logger.info(f"Output Bit Depth Utilized: {output_dr['bit_depth_utilized']:.1f} bits")
+                self.logger.info(
+                    f"Output Percentiles (0.1%, 99.9%): {output_dr['percentile_min']:.0f}, "
+                    f"{output_dr['percentile_max']:.0f}"
+                )
+                self.logger.info(
+                    f"Output Bit Depth Utilized: {output_dr['bit_depth_utilized']:.1f} bits"
+                )
 
                 # Generate histogram comparison plot
                 show_log = self.platform.get("histogram_show_log", True)
@@ -1484,8 +1585,10 @@ class BrilliantISP:
                 )
 
                 output_dir = self.platform.get("output_dir", "module_output")
-                self.logger.info(f"Histogram comparison saved to: {output_dir}/{histogram_filename}")
-            except Exception as e:
+                self.logger.info(
+                    f"Histogram comparison saved to: {output_dir}/{histogram_filename}"
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 self.logger.warning(f"Failed to plot histograms: {e}")
 
         if effective_save:
@@ -1511,7 +1614,12 @@ class BrilliantISP:
                 )
 
             util.save_pipeline_output(
-                self.out_file, out_rgb, self.c_yaml, out_file_name, self.output_path, short_names=short_names
+                self.out_file,
+                out_rgb,
+                self.c_yaml,
+                out_file_name,
+                self.output_path,
+                short_names=short_names,
             )
 
     def execute(
@@ -1575,21 +1683,33 @@ class BrilliantISP:
             raise RuntimeError("Configuration must be loaded before updating 3A statistics.")
         # Update 3A in c_yaml too because it is output config
         if awb_on is True and self.parm_dga["is_auto"] and self.parm_awb["is_enable"]:
-            self.parm_wbc["r_gain"] = self.c_yaml["white_balance"]["r_gain"] = float(self.awb_gains[0])
-            self.parm_wbc["b_gain"] = self.c_yaml["white_balance"]["b_gain"] = float(self.awb_gains[1])
-        if ae_on is True and self.parm_dga.get("is_enable", True) and self.parm_dga["is_auto"] and self.parm_ae["is_enable"]:
-            self.parm_dga["ae_feedback"] = self.c_yaml["digital_gain"]["ae_feedback"] = self.ae_feedback
-            self.parm_dga["current_gain"] = self.c_yaml["digital_gain"]["current_gain"] = self.dga_current_gain
+            self.parm_wbc["r_gain"] = self.c_yaml["white_balance"]["r_gain"] = float(
+                self.awb_gains[0]
+            )
+            self.parm_wbc["b_gain"] = self.c_yaml["white_balance"]["b_gain"] = float(
+                self.awb_gains[1]
+            )
+        if (
+            ae_on is True
+            and self.parm_dga.get("is_enable", True)
+            and self.parm_dga["is_auto"]
+            and self.parm_ae["is_enable"]
+        ):
+            self.parm_dga["ae_feedback"] = self.c_yaml["digital_gain"]["ae_feedback"] = (
+                self.ae_feedback
+            )
+            self.parm_dga["current_gain"] = self.c_yaml["digital_gain"]["current_gain"] = (
+                self.dga_current_gain
+            )
 
     def execute_with_3a_statistics(self) -> None:
         """Bounded native 3A controller; delegates to the shared native path."""
         self._run_native()
 
     def _execute_with_3a_statistics_legacy(self) -> None:
-        """Retired unbounded legacy 3A loop; superseded by _run_native."""
+        """Retired unbounded legacy 3A loop; superseded by _run_native.
 
-        """
-        Execute Brilliant-ISP with AWB gains and correct exposure
+        Execute Brilliant-ISP with AWB gains and correct exposure.
         """
 
         # Max valid gain index (len - 1).  Previous code used len() which caused
@@ -1636,9 +1756,13 @@ class BrilliantISP:
 
         self.sensor_info["height"] = self.c_yaml["sensor_info"]["height"] = sensor_info["height"]
 
-        self.sensor_info["bit_depth"] = self.c_yaml["sensor_info"]["bit_depth"] = sensor_info["bit_depth"]
+        self.sensor_info["bit_depth"] = self.c_yaml["sensor_info"]["bit_depth"] = sensor_info[
+            "bit_depth"
+        ]
 
-        self.sensor_info["bayer_pattern"] = self.c_yaml["sensor_info"]["bayer_pattern"] = sensor_info["bayer_pattern"]
+        self.sensor_info["bayer_pattern"] = self.c_yaml["sensor_info"]["bayer_pattern"] = (
+            sensor_info["bayer_pattern"]
+        )
 
         # Keep the per-frame reset baseline in sync so the new dimensions survive
         # _reset_transient_frame_state() on the next frame.
@@ -1655,11 +1779,21 @@ class BrilliantISP:
             white_level = sensor_info.get("white_level")
             wb_gains = sensor_info.get("wb_gains")
             if black_level is None or white_level is None or wb_gains is None:
-                raise ValueError("update_blc_wb=True requires black_level, white_level, and wb_gains metadata.")
-            self.parm_blc["r_offset"] = self.c_yaml["black_level_correction"]["r_offset"] = black_level[0]
-            self.parm_blc["gr_offset"] = self.c_yaml["black_level_correction"]["gr_offset"] = black_level[1]
-            self.parm_blc["gb_offset"] = self.c_yaml["black_level_correction"]["gb_offset"] = black_level[2]
-            self.parm_blc["b_offset"] = self.c_yaml["black_level_correction"]["b_offset"] = black_level[3]
+                raise ValueError(
+                    "update_blc_wb=True requires black_level, white_level, and wb_gains metadata."
+                )
+            self.parm_blc["r_offset"] = self.c_yaml["black_level_correction"]["r_offset"] = (
+                black_level[0]
+            )
+            self.parm_blc["gr_offset"] = self.c_yaml["black_level_correction"]["gr_offset"] = (
+                black_level[1]
+            )
+            self.parm_blc["gb_offset"] = self.c_yaml["black_level_correction"]["gb_offset"] = (
+                black_level[2]
+            )
+            self.parm_blc["b_offset"] = self.c_yaml["black_level_correction"]["b_offset"] = (
+                black_level[3]
+            )
 
             self.parm_blc["r_sat"] = self.c_yaml["black_level_correction"]["r_sat"] = white_level
             self.parm_blc["gr_sat"] = self.c_yaml["black_level_correction"]["gr_sat"] = white_level
@@ -1698,8 +1832,6 @@ class BrilliantISP:
             return
         platform = self.platform
         self._check_cancelled()
-        import dataclasses
-        from modules.tone_mapping.diagnostics import plot_curve, save_mapped_output
         image = np.asarray(image)
         module = (
             f"native_{stage}_{resolved.spec.operator}_{resolved.spec.backend}_normalized"
@@ -1742,17 +1874,10 @@ class BrilliantISP:
         luma pipeline, transfer/quantize, explicit writer. No module
         execute()/save in this path where a compute_linear exists.
         """
-        from modules.tone_mapping.native import map_native
-        from modules.tone_mapping.registry import resolve_tone_mapping
-        from util.color import adjust_saturation, encode_transfer, luminance
-        from util.luma import replace_luminance
-        from util.native_array import as_float32
-        from util.native_output import output_metadata, preview_from_native, quantize_output
-        from util.output_contract import OutputSpec
-        from util.signal_range import linear_code_range
-
         if self.raw is None or self.platform is None or self.sensor_info is None:
-            raise RuntimeError("RAW image and configuration must be loaded before running the pipeline.")
+            raise RuntimeError(
+                "RAW image and configuration must be loaded before running the pipeline."
+            )
         self._reset_transient_frame_state()
         self.pass_index += 1
         platform = self.platform
@@ -1775,7 +1900,9 @@ class BrilliantISP:
         # ---------------------------------------------------------------
         # Linear Bayer chain + bounded AE controller. Every pass restarts
         # from the immutable OECF output; the applied gain index is local.
-        dg_auto = bool(self.parm_dga.get("is_enable", True)) and bool(self.parm_dga.get("is_auto", False))
+        dg_auto = bool(self.parm_dga.get("is_enable", True)) and bool(
+            self.parm_dga.get("is_auto", False)
+        )
         ae_enabled = bool(self.parm_ae.get("is_enable", False))
         ae_mode = str(self.parm_ae.get("exposure_correction_mode", "step"))
         ae_rerun = bool(self.parm_ae.get("rerun_from_digital_gain", True))
@@ -1826,17 +1953,25 @@ class BrilliantISP:
         if smooth_mode:
             max_passes = 2
             prev_gain = hint_state.ae_gain if hint_state is not None else None
-            self._smooth_gain = float(prev_gain) if prev_gain is not None else float(self.parm_dga["gain_array"][gain_idx])
+            self._smooth_gain = (
+                float(prev_gain)
+                if prev_gain is not None
+                else float(self.parm_dga["gain_array"][gain_idx])
+            )
             smooth_linear = not bool(self.parm_bnr.get("is_enable", False))
 
             tm_cfg_ae = c_yaml.get("tone_mapping", {}) or {}
             rgb_norm_ae = str(tm_cfg_ae.get("rgb_norm", "luminance"))
             k_ae = 1.0 if rgb_norm_ae == "max_rgb" else float(tm_cfg_ae.get("rgb_norm_k", 1.0))
-            model_norm = bool(self.parm_ae.get("model_rgb_norm", False)) and rgb_norm_ae != "luminance"
+            model_norm = (
+                bool(self.parm_ae.get("model_rgb_norm", False)) and rgb_norm_ae != "luminance"
+            )
 
         for ae_pass in range(max_passes):
             ae_passes = ae_pass + 1
-            wb_code = self._run_gain_through_white_balance(oecf_raw, ae_pass=ae_pass, gain_index=gain_idx)
+            wb_code = self._run_gain_through_white_balance(
+                oecf_raw, ae_pass=ae_pass, gain_index=gain_idx
+            )
             awb_status = self.last_awb_status
             awb_count = self.last_awb_count
             self.current_frame = as_float32(wb_code, name="current_frame")
@@ -1848,22 +1983,37 @@ class BrilliantISP:
             def _demosaic(c=wb_code) -> np.ndarray:
                 normalized = c.astype(np.float64) / declared_max
                 bayer65 = as_float32(normalized * 65535.0, name="demosaic_input")
-                demos = Demosaic(bayer65, platform, cast(SensorInfo, p_sensor), self.parm_dem).compute_linear()
+                demos = Demosaic(
+                    bayer65, platform, cast(SensorInfo, p_sensor), self.parm_dem
+                ).compute_linear()
                 out = np.asarray(demos, dtype=np.float64) / 65535.0
                 return as_float32(out, name="demosaic")
-            rgb_linear = np.asarray(self._run_stage("demosaic", _demosaic, ae_pass=ae_pass), dtype=np.float64)
+            rgb_linear = np.asarray(
+                self._run_stage("demosaic", _demosaic, ae_pass=ae_pass), dtype=np.float64
+            )
 
             def _ccm(rgb=rgb_linear) -> np.ndarray:
-                return CCMOPT(as_float32(rgb, name="ccm_input"), platform, cast(SensorInfo, p_sensor), self.parm_ccm).compute_linear()
+                return CCMOPT(
+                    as_float32(rgb, name="ccm_input"),
+                    platform,
+                    cast(SensorInfo, p_sensor),
+                    self.parm_ccm,
+                ).compute_linear()
             rgb_linear = self._run_stage("color_correction_matrix", _ccm, ae_pass=ae_pass)
 
             # ---------------------------------------------------------------
             # Named tap: scene-linear RGB feeds the AE meter (untonemapped).
             def _linear_tap(rgb=rgb_linear) -> np.ndarray:
                 return np.asarray(rgb)
-            ae_rgb = np.asarray(self._run_stage("linear_rgb_pre_tone_mapping", _linear_tap, ae_pass=ae_pass))
-            ae = AE(ae_rgb, cast(SensorInfo, p_sensor), self.parm_ae, meter_domain="scene_linear_rgb")
-            fb = self._run_stage("auto_exposure", lambda a=ae: a.get_exposure_feedback(), ae_pass=ae_pass)
+            ae_rgb = np.asarray(
+                self._run_stage("linear_rgb_pre_tone_mapping", _linear_tap, ae_pass=ae_pass)
+            )
+            ae = AE(
+                ae_rgb, cast(SensorInfo, p_sensor), self.parm_ae, meter_domain="scene_linear_rgb"
+            )
+            fb = self._run_stage(
+                "auto_exposure", lambda a=ae: a.get_exposure_feedback(), ae_pass=ae_pass
+            )
             self.ae_feedback = fb
 
             if smooth_mode and smooth_params is not None:
@@ -1881,14 +2031,18 @@ class BrilliantISP:
                     # output luma under N = max(Y, k*max) is Y*f(N)/N = f(Y*r)/r with r = N/Y >= 1
                     pk = smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
                     y_pos = y_unity > 0
-                    norm_r = np.where(y_pos, np.maximum(1.0, k_ae * pk / np.where(y_pos, y_unity, 1.0)), 1.0)
+                    norm_r = np.where(
+                        y_pos, np.maximum(1.0, k_ae * pk / np.where(y_pos, y_unity, 1.0)), 1.0
+                    )
 
                     def _normed_tone_map(y: np.ndarray, r: np.ndarray = norm_r) -> np.ndarray:
                         if np.shape(y) != r.shape:
                             return _smooth_tone_map(y)
                         return _smooth_tone_map(y * r) / r
                     ae_tone_map = _normed_tone_map
-                roi_w = metering_roi.weight_map(np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae))
+                roi_w = metering_roi.weight_map(
+                    np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae)
+                )
                 stride = smooth_params.meter_stride
                 smooth_desired = smooth_ae.solve_gain(
                     y_unity, ae_tone_map, smooth_params, peak_unity=peak_unity,
@@ -1900,7 +2054,9 @@ class BrilliantISP:
                 ratio = new_gain / applied
                 if ratio == 1.0 or smooth_linear:
                     if ratio != 1.0:
-                        wb_code = as_float32(np.asarray(wb_code, dtype=np.float64) * ratio, name="white_balance")
+                        wb_code = as_float32(
+                            np.asarray(wb_code, dtype=np.float64) * ratio, name="white_balance"
+                        )
                         rgb_linear = np.asarray(rgb_linear, dtype=np.float64) * ratio
                         self.current_frame = as_float32(wb_code, name="current_frame")
                     ae_stop = "smooth"
@@ -1910,7 +2066,9 @@ class BrilliantISP:
             suggested = gain_idx
             if ae_enabled and ae.last_meter_average is not None and dg_auto:
                 if ae_mode == "direct":
-                    suggested = ae.suggest_direct_gain_index(gain_idx, list(self.parm_dga["gain_array"]))
+                    suggested = ae.suggest_direct_gain_index(
+                        gain_idx, list(self.parm_dga["gain_array"])
+                    )
                 elif fb == -1:
                     suggested = min(gain_idx + 1, len(self.parm_dga["gain_array"]) - 1)
                 elif fb == 1:
@@ -1971,8 +2129,12 @@ class BrilliantISP:
         # without a second TMO; AE always sees the untonemapped linear tap.
         if advanced_pre:
             wb_norm = np.asarray(wb_code, dtype=np.float64) / declared_max
-            mapped_plane = self._run_stage("tone_mapping_pre", lambda: map_native(wb_norm, config=resolved.spec))
-            self._save_native_tone_mapping_diagnostics(mapped_plane, stage="tone_mapping_pre", resolved=resolved)
+            mapped_plane = self._run_stage(
+                "tone_mapping_pre", lambda: map_native(wb_norm, config=resolved.spec)
+            )
+            self._save_native_tone_mapping_diagnostics(
+                mapped_plane, stage="tone_mapping_pre", resolved=resolved
+            )
 
             def _render_demosaic() -> np.ndarray:
                 pre_dem = Demosaic(
@@ -1989,32 +2151,44 @@ class BrilliantISP:
             tm_yaml = c_yaml.get("tone_mapping", {})
             rgb_norm = str(tm_yaml.get("rgb_norm", "luminance"))
             if rgb_norm not in ("luminance", "max_rgb", "max_blend"):
-                raise ValueError("tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'max_blend'")
+                raise ValueError(
+                    "tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'max_blend'"
+                )
 
             def _tone_map_post() -> np.ndarray:
                 if rgb_norm == "max_blend":
-                    from modules.tone_mapping.native import map_native_max_blend
                     desat = tm_yaml.get("near_white_desat")
                     return map_native_max_blend(
-                        rgb_linear / tm_white, config=tm_spec, k=float(tm_yaml.get("rgb_norm_k", 1.0)),
-                        desat=tuple(desat) if desat is not None else None)
+                        rgb_linear / tm_white,
+                        config=tm_spec,
+                        k=float(tm_yaml.get("rgb_norm_k", 1.0)),
+                        desat=tuple(desat) if desat is not None else None,
+                    )
                 if rgb_norm == "max_rgb":
-                    from modules.tone_mapping.native import map_native_max_rgb
                     return map_native_max_rgb(rgb_linear / tm_white, config=tm_spec)
                 return map_native(rgb_linear / tm_white, config=tm_spec)
             mapped = self._run_stage("tone_mapping_post", _tone_map_post)
             if aw_cfg:
-                from modules.tone_mapping import adaptive_white
                 self._tm_white_next = adaptive_white.next_white(
-                    tm_white if (hint_state is not None and getattr(hint_state, "tone_white", None)) else None,
-                    adaptive_white.desired_white(rgb_linear, aw_cfg), aw_cfg)
-            self._save_native_tone_mapping_diagnostics(mapped, stage="tone_mapping_post", resolved=resolved)
+                    (
+                        tm_white
+                        if (hint_state is not None and getattr(hint_state, "tone_white", None))
+                        else None
+                    ),
+                    adaptive_white.desired_white(rgb_linear, aw_cfg),
+                    aw_cfg,
+                )
+            self._save_native_tone_mapping_diagnostics(
+                mapped, stage="tone_mapping_post", resolved=resolved
+            )
         mapped = np.asarray(mapped, dtype=np.float64)
 
         # Saturation adjustment on display-linear RGB (Rec.709 weights, enabled only)
         def _saturation(m=mapped) -> np.ndarray:
             if self.parm_cse.get("is_enable", False):
-                return np.asarray(adjust_saturation(m, float(self.parm_cse["saturation_gain"]), matrix="bt709"))
+                return np.asarray(
+                    adjust_saturation(m, float(self.parm_cse["saturation_gain"]), matrix="bt709")
+                )
             return np.asarray(m)
         mapped = np.asarray(self._run_stage("saturation", _saturation), dtype=np.float64)
 
@@ -2031,7 +2205,9 @@ class BrilliantISP:
                 peak = np.max(m, axis=-1, keepdims=True)
                 t = np.where(peak > white, (white - y) / np.maximum(peak - y, 1e-12), 1.0)
                 return y + np.clip(t, 0.0, 1.0) * (m - y)
-            mapped = np.asarray(self._run_stage("gamut_compress", _gamut_compress), dtype=np.float64)
+            mapped = np.asarray(
+                self._run_stage("gamut_compress", _gamut_compress), dtype=np.float64
+            )
 
         # ---------------------------------------------------------------
         # Output spec + luma/display blocks + scale
@@ -2041,7 +2217,6 @@ class BrilliantISP:
         ldci_place = str(self.parm_ldci.get("placement", "post_transfer"))
         def _ldci_pre(m=mapped) -> np.ndarray:
             if self.parm_ldci.get("is_enable", False) and ldci_place == "pre_transfer":
-                from modules.ldci.clahe import apply_luma as _clahe
                 y = luminance(m, matrix=spec.matrix, dtype=np.float64)
                 out = _clahe(y, scale=1.0,
                              wind=self.parm_ldci.get("wind", 64),
@@ -2055,14 +2230,17 @@ class BrilliantISP:
             if spec.floating_linear:
                 return as_float32(m, name="linear_float_output").astype(np.float64)
             bounded = np.clip(m, 0.0, 1.0) if spec.transfer != "linear" else m
-            return np.asarray(encode_transfer(bounded, spec.transfer, gamma=getattr(spec, "gamma", 2.2), dtype=np.float64))
+            return np.asarray(
+                encode_transfer(
+                    bounded, spec.transfer, gamma=getattr(spec, "gamma", 2.2), dtype=np.float64
+                )
+            )
         encoded = np.asarray(self._run_stage("transfer_encode", _transfer), dtype=np.float64)
 
         # Post-transfer luma blocks: LDCI (post), sharpen, NLM — each on
         # output.matrix luminance, recombined via replace_luminance.
         def _ldci_post(e=encoded) -> np.ndarray:
             if self.parm_ldci.get("is_enable", False) and ldci_place == "post_transfer":
-                from modules.ldci.clahe import apply_luma as _clahe
                 y = luminance(e, matrix=spec.matrix, dtype=np.float64)
                 out = _clahe(y, scale=1.0,
                              wind=self.parm_ldci.get("wind", 64),
@@ -2073,7 +2251,6 @@ class BrilliantISP:
 
         def _sharpen(e=encoded) -> np.ndarray:
             if self.parm_sha.get("is_enable", False):
-                from modules.sharpen.unsharp_masking import apply_luma as _ush
                 y = luminance(e, matrix=spec.matrix, dtype=np.float64)
                 out = _ush(y, scale=1.0,
                            sigma=self.parm_sha.get("sharpen_sigma", 1.0),
@@ -2084,7 +2261,6 @@ class BrilliantISP:
 
         def _nlm(e=encoded) -> np.ndarray:
             if self.parm_2dn.get("is_enable", False):
-                from modules.noise_reduction_2d.non_local_means import apply_luma as _nl
                 y = luminance(e, matrix=spec.matrix, dtype=np.float64)
                 out = _nl(y, scale=1.0,
                           window_size=self.parm_2dn.get("window_size", 3),
@@ -2098,11 +2274,18 @@ class BrilliantISP:
         def _scl(e=encoded) -> np.ndarray:
             if not self.parm_sca.get("is_enable", False):
                 return np.asarray(e, dtype=np.float64)
-            from modules.scale.scale import Scale
-            scl = Scale(as_float32(e, name="scale_input"), platform,
-                        cast(SensorInfo, p_sensor), self.parm_sca,
-                        int(self.parm_csc.get("conv_standard", 3)) if isinstance(self.parm_csc, dict) else 3,
-                        cpu_only=True)
+            scl = Scale(
+                as_float32(e, name="scale_input"),
+                platform,
+                cast(SensorInfo, p_sensor),
+                self.parm_sca,
+                (
+                    int(self.parm_csc.get("conv_standard", 3))
+                    if isinstance(self.parm_csc, dict)
+                    else 3
+                ),
+                cpu_only=True,
+            )
             return np.asarray(scl.compute_linear(), dtype=np.float64)
         encoded = np.asarray(self._run_stage("scale", _scl), dtype=np.float64)
 
@@ -2111,7 +2294,9 @@ class BrilliantISP:
         self._check_cancelled()
 
         # Quantize + preview + metadata (lead-native_output contract)
-        native = self._run_stage("output", lambda: quantize_output(np.asarray(encoded, dtype=np.float64), spec))
+        native = self._run_stage(
+            "output", lambda: quantize_output(np.asarray(encoded, dtype=np.float64), spec)
+        )
         self._check_cancelled()
         preview = preview_from_native(native, spec)
         metadata = output_metadata(
@@ -2153,7 +2338,9 @@ class BrilliantISP:
             self.last_feedback["tm_white"] = float(self._tm_white)
             if self._tm_white_next is not None:
                 self.last_feedback["tm_white_next"] = float(self._tm_white_next)
-        if getattr(self, "last_awb_raw_estimate", None) is not None and awb_temporal.is_active(self.parm_awb):
+        if getattr(self, "last_awb_raw_estimate", None) is not None and awb_temporal.is_active(
+            self.parm_awb
+        ):
             self.last_feedback["awb_raw_estimate"] = self.last_awb_raw_estimate
 
         # ---------------------------------------------------------------
@@ -2167,8 +2354,8 @@ class BrilliantISP:
             write_dir = Path(self.output_path)
         if write_dir is not None:
             self._check_cancelled()
-            from util.output_writer import write_output
-            artifacts = write_output(
+            # Module attribute lookup keeps write_output patchable in tests.
+            artifacts = output_writer.write_output(
                 native, spec, metadata,
                 output_dir=write_dir,
                 stem=getattr(self, "out_file", "native"),

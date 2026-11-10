@@ -1,3 +1,5 @@
+"""Typed configuration sections, RAW metadata and pipeline protocols."""
+
 from __future__ import annotations
 
 from typing import Any, Literal, Protocol, TypeAlias, TypedDict
@@ -41,6 +43,7 @@ DemosaicMasks: TypeAlias = tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 class RequiredPlatformConfig(TypedDict):
+    """Required keys of the ``platform`` section."""
     filename: str
     disable_progress_bar: bool
     leave_pbar_string: bool
@@ -56,6 +59,7 @@ class RequiredPlatformConfig(TypedDict):
 
 
 class PlatformConfig(RequiredPlatformConfig, total=False):
+    """``platform`` section: required plus optional keys."""
     debug_log_level: str
     debug_log_file: str | None
     plot_histograms: bool
@@ -66,6 +70,7 @@ class PlatformConfig(RequiredPlatformConfig, total=False):
 
 
 class RequiredSensorInfo(TypedDict):
+    """Required keys of the ``sensor_info`` section."""
     bayer_pattern: BayerPattern
     hdr_bit_depth: int
     bit_depth: int
@@ -76,6 +81,7 @@ class RequiredSensorInfo(TypedDict):
 
 
 class SensorInfo(RequiredSensorInfo, total=False):
+    """``sensor_info`` section: required plus optional keys."""
     sensor: str
     endian_type: str
     data_format: str
@@ -99,6 +105,7 @@ class SensorInfo(RequiredSensorInfo, total=False):
 
 
 class ParsedFileNameInfo(TypedDict):
+    """Sensor fields parsed from a RAW file name."""
     width: int
     height: int
     bit_depth: int
@@ -106,6 +113,7 @@ class ParsedFileNameInfo(TypedDict):
 
 
 class ExtractedRawMetadata(ParsedFileNameInfo, total=False):
+    """File-name fields plus metadata extracted from the RAW container."""
     black_level: tuple[int, int, int, int]
     white_level: int
     wb_gains: tuple[float, float, float, float]
@@ -113,6 +121,7 @@ class ExtractedRawMetadata(ParsedFileNameInfo, total=False):
 
 
 class DigitalGainConfig(TypedDict):
+    """``digital_gain`` section."""
     is_debug: bool
     is_auto: bool
     is_enable: bool
@@ -123,10 +132,12 @@ class DigitalGainConfig(TypedDict):
 
 
 class DigitalGainConfigOptional(DigitalGainConfig, total=False):
+    """``digital_gain`` section with optional runtime keys."""
     exposure_correction_mode: str
 
 
 class WhiteBalanceConfig(TypedDict):
+    """``white_balance`` section."""
     is_enable: bool
     is_debug: bool
     is_auto: bool
@@ -136,26 +147,31 @@ class WhiteBalanceConfig(TypedDict):
 
 
 class RequiredGammaCorrectionConfig(TypedDict):
+    """Required keys of the ``gamma_correction`` section."""
     is_enable: bool
     is_save: bool
 
 
 class GammaCorrectionConfig(RequiredGammaCorrectionConfig, total=False):
+    """``gamma_correction`` section: required plus optional keys."""
     curve: str
     gamma: float
 
 
 class ColorSpaceConversionConfig(TypedDict):
+    """``color_space_conversion`` section."""
     conv_standard: int
     is_save: bool
 
 
 class ColorSaturationEnhancementConfig(TypedDict):
+    """``color_saturation_enhancement`` section."""
     is_enable: bool
     saturation_gain: float
 
 
 class LDCIConfig(TypedDict):
+    """``ldci`` section."""
     is_enable: bool
     clip_limit: float
     wind: int
@@ -163,6 +179,7 @@ class LDCIConfig(TypedDict):
 
 
 class SharpenConfig(TypedDict):
+    """``sharpen`` section."""
     is_enable: bool
     sharpen_sigma: float
     sharpen_strength: float
@@ -170,6 +187,7 @@ class SharpenConfig(TypedDict):
 
 
 class NoiseReduction2DConfig(TypedDict):
+    """``2d_noise_reduction`` section."""
     is_enable: bool
     window_size: int
     patch_size: int
@@ -178,11 +196,13 @@ class NoiseReduction2DConfig(TypedDict):
 
 
 class RGBConversionConfig(TypedDict):
+    """``rgb_conversion`` section."""
     is_enable: bool
     is_save: bool
 
 
 class CropConfig(TypedDict):
+    """``crop`` section."""
     is_enable: bool
     is_debug: bool
     crop_x_start: int
@@ -193,12 +213,14 @@ class CropConfig(TypedDict):
 
 
 class YUVConversionFormatConfig(TypedDict):
+    """``yuv_conversion_format`` section."""
     is_enable: bool
     conv_type: str
     is_save: bool
 
 
 class ScaleConfig(TypedDict):
+    """``scale`` section."""
     is_enable: bool
     is_debug: bool
     new_width: int
@@ -211,6 +233,7 @@ class ScaleConfig(TypedDict):
 
 
 class ColorCorrectionMatrixConfig(TypedDict):
+    """``color_correction_matrix`` section."""
     is_enable: bool
     is_save: bool
     corrected_red: list[float]
@@ -219,6 +242,7 @@ class ColorCorrectionMatrixConfig(TypedDict):
 
 
 class AutoExposureConfig(TypedDict):
+    """``auto_exposure`` section."""
     is_enable: bool
     is_debug: bool
     center_illuminance: float
@@ -226,6 +250,7 @@ class AutoExposureConfig(TypedDict):
 
 
 class DeadPixelCorrectionConfig(TypedDict):
+    """``dead_pixel_correction`` section."""
     is_enable: bool
     dp_threshold: int
     is_debug: bool
@@ -233,6 +258,7 @@ class DeadPixelCorrectionConfig(TypedDict):
 
 
 class BlackLevelCorrectionConfig(TypedDict):
+    """``black_level_correction`` section."""
     is_enable: bool
     r_offset: int
     gr_offset: int
@@ -247,6 +273,7 @@ class BlackLevelCorrectionConfig(TypedDict):
 
 
 class LensShadingCorrectionConfig(TypedDict, total=False):
+    """``lens_shading_correction`` section (all keys optional)."""
     is_enable: bool
     is_save: bool
     r_k1: float
@@ -260,6 +287,7 @@ class LensShadingCorrectionConfig(TypedDict, total=False):
 
 
 class BayerNoiseReductionConfig(TypedDict):
+    """``bayer_noise_reduction`` section."""
     is_enable: bool
     filter_window: int
     r_std_dev_s: float
@@ -272,18 +300,22 @@ class BayerNoiseReductionConfig(TypedDict):
 
 
 class RequiredDemosaicConfig(TypedDict):
+    """Required keys of the ``demosaic`` section."""
     is_save: bool
 
 
 class DemosaicConfig(RequiredDemosaicConfig, total=False):
+    """``demosaic`` section: required plus optional keys."""
     algorithm: str
 
 
 class RequiredToneMappingConfig(TypedDict):
+    """Required keys of the ``tone_mapping`` section."""
     is_enable: bool
 
 
 class ToneMappingConfig(RequiredToneMappingConfig, total=False):
+    """``tone_mapping`` section: required plus optional keys."""
     tone_mapping_before_demosaic: bool
     tone_mapper: ToneMapperName
     is_save: bool
@@ -301,6 +333,7 @@ class ToneMappingConfig(RequiredToneMappingConfig, total=False):
 
 
 class ToneMappingParams(TypedDict, total=False):
+    """Per-operator tone-mapping parameter block (all keys optional)."""
     is_enable: bool
     is_save: bool
     is_debug: bool
@@ -325,6 +358,7 @@ class ToneMappingParams(TypedDict, total=False):
 
 
 class ToneMappingContext(Protocol):
+    """Pipeline attributes the tone-mapping modules read from their host."""
     platform: PlatformConfig
     sensor_info: SensorInfo
     tone_mapping: ToneMappingConfig
@@ -370,7 +404,10 @@ RequiredPipelineConfig = TypedDict(
 )
 
 
-class PipelineConfig(RequiredPipelineConfig, total=False):
+# RequiredPipelineConfig uses the functional TypedDict syntax (keys such as
+# "2d_noise_reduction" are not identifiers), which pylint misreads.
+class PipelineConfig(RequiredPipelineConfig, total=False):  # pylint: disable=inherit-non-class
+    """Full pipeline configuration: required sections plus optional operator blocks."""
     oecf: GenericConfig
     aces: ToneMappingParams
     reinhard_integer: ToneMappingParams
