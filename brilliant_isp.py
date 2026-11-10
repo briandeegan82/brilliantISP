@@ -1816,6 +1816,13 @@ class BrilliantISP:
         smooth_params = smooth_ae.SmoothAEParams.from_config(self.parm_ae) if smooth_mode else None
         smooth_desired: float | None = None
         self._smooth_gain = None
+        smooth_linear, k_ae, model_norm = False, 1.0, False
+
+        def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
+            if not resolved.spec.enabled:
+                return y
+            return np.asarray(map_native(y / tm_white, config=tm_spec), dtype=np.float64)
+
         if smooth_mode:
             max_passes = 2
             prev_gain = hint_state.ae_gain if hint_state is not None else None
@@ -1826,11 +1833,6 @@ class BrilliantISP:
             rgb_norm_ae = str(tm_cfg_ae.get("rgb_norm", "luminance"))
             k_ae = 1.0 if rgb_norm_ae == "max_rgb" else float(tm_cfg_ae.get("rgb_norm_k", 1.0))
             model_norm = bool(self.parm_ae.get("model_rgb_norm", False)) and rgb_norm_ae != "luminance"
-
-            def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
-                if not resolved.spec.enabled:
-                    return y
-                return np.asarray(map_native(y / tm_white, config=tm_spec), dtype=np.float64)
 
         for ae_pass in range(max_passes):
             ae_passes = ae_pass + 1
@@ -1881,10 +1883,11 @@ class BrilliantISP:
                     y_pos = y_unity > 0
                     norm_r = np.where(y_pos, np.maximum(1.0, k_ae * pk / np.where(y_pos, y_unity, 1.0)), 1.0)
 
-                    def ae_tone_map(y: np.ndarray, r: np.ndarray = norm_r) -> np.ndarray:
+                    def _normed_tone_map(y: np.ndarray, r: np.ndarray = norm_r) -> np.ndarray:
                         if np.shape(y) != r.shape:
                             return _smooth_tone_map(y)
                         return _smooth_tone_map(y * r) / r
+                    ae_tone_map = _normed_tone_map
                 roi_w = metering_roi.weight_map(np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae))
                 stride = smooth_params.meter_stride
                 smooth_desired = smooth_ae.solve_gain(
