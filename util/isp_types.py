@@ -97,6 +97,7 @@ class SensorInfo(RequiredSensorInfo, total=False):
     vertical_flip: bool
     embedded_rows_top: int
     embedded_rows_bottom: int
+    realign_columns_from: int
     orig_size: str
     # Fill empty CFA green sites from neighboring R/B (pathological dumps).
     # true/false, or "auto" (default): repair when >50% of green sites are zero.

@@ -200,6 +200,8 @@ PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
                   choices=("low_first", "high_first"), affected_stage="raw_input"),
     ParameterSpec("sensor_info.embedded_rows_top", "int", default=ABSENT, minimum=0,
                   units="rows", affected_stage="raw_input"),
+    ParameterSpec("sensor_info.realign_columns_from", "int", default=ABSENT, minimum=0,
+                  units="columns", affected_stage="raw_input"),
     ParameterSpec("sensor_info.embedded_rows_bottom", "int", default=ABSENT, minimum=0,
                   units="rows", affected_stage="raw_input"),
     ParameterSpec("sensor_info.manual_bit_shift", "int", default=ABSENT, minimum=0,

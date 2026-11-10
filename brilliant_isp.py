@@ -43,6 +43,7 @@ from util.config_schema import (
     normalize_config,
     validate_black_level_ownership,
 )
+from util import metering_roi
 from util.debug_utils import DebugLogger, get_debug_logger, set_global_debug_enabled
 from util.histogram_utils import estimate_dynamic_range, plot_histogram_comparison
 from util.isp_types import (
@@ -110,7 +111,9 @@ from util.signal_range import linear_code_range
 
 # Module imports
 from modules.auto_exposure.auto_exposure import AutoExposure as AE
+from modules.auto_exposure import smooth_control as smooth_ae
 from modules.auto_white_balance.auto_white_balance import AutoWhiteBalance as AWB
+from modules.auto_white_balance import temporal as awb_temporal
 from modules.bayer_noise_reduction.bayer_noise_reduction import BayerNoiseReduction as BNR
 from modules.black_level_correction.black_level_correction import BlackLevelCorrection as BLC
 from modules.color_correction_matrix.color_correction_matrix_optimized import (
@@ -134,8 +137,9 @@ from modules.rgb_conversion.rgb_conversion import RGBConversion as RGBC
 from modules.scale.scale import Scale
 from modules.sharpen.sharpen import Sharpening as SHARP
 from modules.sharpen.unsharp_masking import apply_luma as _ush
+from modules.tone_mapping import adaptive_white
 from modules.tone_mapping.diagnostics import plot_curve, save_mapped_output
-from modules.tone_mapping.native import map_native
+from modules.tone_mapping.native import map_native, map_native_max_blend, map_native_max_rgb
 from modules.tone_mapping.registry import ResolvedToneMapping, resolve_tone_mapping
 from modules.tone_mapping.tone_mapping import ToneMapping as tone_mapping
 from modules.white_balance.white_balance_optimized import WhiteBalanceOptimized as WBOPT
@@ -779,7 +783,15 @@ class BrilliantISP:
         # =====================================================================
         # Digital Gain (receives OECF output per pipeline order: PWC -> OECF -> DG)
         # Digital Gain
+        smooth_gain = getattr(self, "_smooth_gain", None)
+
         def _dg() -> tuple[np.ndarray, int]:
+            if smooth_gain is not None:
+                arr = np.asarray(self.parm_dga["gain_array"], dtype=np.float64)
+                nearest = int(np.argmin(np.abs(np.log2(arr) - np.log2(smooth_gain))))
+                with np.errstate(over="ignore", invalid="ignore"):
+                    scaled = np.asarray(oecf_raw, dtype=np.float64) * float(smooth_gain)
+                return as_float32(scaled, name="digital_gain"), nearest
             config = cast(DigitalGainConfig, dict(self.parm_dga))
             config["ae_feedback"] = None
             config["current_gain"] = (
@@ -822,13 +834,21 @@ class BrilliantISP:
         def _awb() -> Any:
             awb = AWB(bnr_raw, sensor_info, self.parm_awb, self.parm_wbc)
             hint = self.processing_state.previous_awb_gains if self.processing_state else None
-            self.last_awb_input_gain = (
-                float(self.parm_dga["gain_array"][self.dga_current_gain])
-                if self.parm_dga.get("is_enable", True) else 1.0
-            )
+            if smooth_gain is not None:
+                self.last_awb_input_gain = float(smooth_gain)
+            else:
+                self.last_awb_input_gain = (
+                    float(self.parm_dga["gain_array"][self.dga_current_gain])
+                    if self.parm_dga.get("is_enable", True) else 1.0
+                )
             gains = awb.compute_gains(fallback_gains=hint, input_gain=self.last_awb_input_gain)
             self.last_awb_status = awb.last_status
             self.last_awb_count = awb.sample_count
+            self.last_awb_raw_estimate = (float(gains[0]), float(gains[1]))
+            if awb.last_status == "estimated" and awb_temporal.is_active(self.parm_awb):
+                gains = awb_temporal.filter_gains(
+                    gains, hint, self.parm_awb, input_gain=self.last_awb_input_gain
+                )
             return gains
 
         self.awb_gains = cast(
@@ -1905,11 +1925,47 @@ class BrilliantISP:
         ae_rgb: np.ndarray | None = None
 
         resolved = resolve_tone_mapping(c_yaml)
+        aw_cfg = (c_yaml.get("tone_mapping", {}) or {}).get("adaptive_white")
+        tm_white = 1.0
+        if aw_cfg and hint_state is not None and getattr(hint_state, "tone_white", None):
+            tm_white = max(1.0, float(hint_state.tone_white))
+        tm_spec = resolved.spec if tm_white == 1.0 else dataclasses.replace(
+            resolved.spec, exposure_ev=resolved.spec.exposure_ev + float(np.log2(tm_white)))
+        self._tm_white: float | None = tm_white if aw_cfg else None
+        self._tm_white_next: float | None = None
         advanced_pre = self.tone_mapping_before_demosaic and resolved.spec.enabled
         if advanced_pre:
             self.logger.warning(
                 "Advanced pre-demosaic tone mapping enabled: extra CPU branch; "
                 "color fidelity limitations apply")
+
+        smooth_mode = ae_enabled and dg_auto and bool(self.parm_ae.get("smooth_control", False))
+        smooth_params = smooth_ae.SmoothAEParams.from_config(self.parm_ae) if smooth_mode else None
+        smooth_desired: float | None = None
+        self._smooth_gain = None
+        smooth_linear, k_ae, model_norm = False, 1.0, False
+
+        def _smooth_tone_map(y: np.ndarray) -> np.ndarray:
+            if not resolved.spec.enabled:
+                return y
+            return np.asarray(map_native(y / tm_white, config=tm_spec), dtype=np.float64)
+
+        if smooth_mode:
+            max_passes = 2
+            prev_gain = hint_state.ae_gain if hint_state is not None else None
+            self._smooth_gain = (
+                float(prev_gain)
+                if prev_gain is not None
+                else float(self.parm_dga["gain_array"][gain_idx])
+            )
+            smooth_linear = not bool(self.parm_bnr.get("is_enable", False))
+
+            tm_cfg_ae = c_yaml.get("tone_mapping", {}) or {}
+            rgb_norm_ae = str(tm_cfg_ae.get("rgb_norm", "luminance"))
+            k_ae = 1.0 if rgb_norm_ae == "max_rgb" else float(tm_cfg_ae.get("rgb_norm_k", 1.0))
+            model_norm = (
+                bool(self.parm_ae.get("model_rgb_norm", False)) and rgb_norm_ae != "luminance"
+            )
 
         for ae_pass in range(max_passes):
             ae_passes = ae_pass + 1
@@ -1959,6 +2015,53 @@ class BrilliantISP:
                 "auto_exposure", lambda a=ae: a.get_exposure_feedback(), ae_pass=ae_pass
             )
             self.ae_feedback = fb
+
+            if smooth_mode and smooth_params is not None:
+                applied = float(self._smooth_gain)
+                arr = np.log2(np.asarray(self.parm_dga["gain_array"], dtype=np.float64))
+                if ae_pass > 0:
+                    ae_stop = "smooth_rerun"
+                    suggested = next_idx = int(np.argmin(np.abs(arr - np.log2(applied))))
+                    break
+                y_unity = smooth_ae.scene_luminance(rgb_linear, applied, smooth_params.meter_stride)
+                peak_unity = (smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
+                              if smooth_params.max_clip_fraction < 1.0 else None)
+                ae_tone_map = _smooth_tone_map
+                if model_norm:
+                    # output luma under N = max(Y, k*max) is Y*f(N)/N = f(Y*r)/r with r = N/Y >= 1
+                    pk = smooth_ae.scene_peak(rgb_linear, applied, smooth_params.meter_stride)
+                    y_pos = y_unity > 0
+                    norm_r = np.where(
+                        y_pos, np.maximum(1.0, k_ae * pk / np.where(y_pos, y_unity, 1.0)), 1.0
+                    )
+
+                    def _normed_tone_map(y: np.ndarray, r: np.ndarray = norm_r) -> np.ndarray:
+                        if np.shape(y) != r.shape:
+                            return _smooth_tone_map(y)
+                        return _smooth_tone_map(y * r) / r
+                    ae_tone_map = _normed_tone_map
+                roi_w = metering_roi.weight_map(
+                    np.shape(rgb_linear)[:2], metering_roi.roi_config(self.parm_ae)
+                )
+                stride = smooth_params.meter_stride
+                smooth_desired = smooth_ae.solve_gain(
+                    y_unity, ae_tone_map, smooth_params, peak_unity=peak_unity,
+                    weights=None if roi_w is None else roi_w[::stride, ::stride])
+                prev = hint_state.ae_gain if hint_state is not None else None
+                new_gain = smooth_ae.next_gain(prev, smooth_desired, smooth_params)
+                self._smooth_gain = new_gain
+                suggested = next_idx = int(np.argmin(np.abs(arr - np.log2(new_gain))))
+                ratio = new_gain / applied
+                if ratio == 1.0 or smooth_linear:
+                    if ratio != 1.0:
+                        wb_code = as_float32(
+                            np.asarray(wb_code, dtype=np.float64) * ratio, name="white_balance"
+                        )
+                        rgb_linear = np.asarray(rgb_linear, dtype=np.float64) * ratio
+                        self.current_frame = as_float32(wb_code, name="current_frame")
+                    ae_stop = "smooth"
+                    break
+                continue
 
             suggested = gain_idx
             if ae_enabled and ae.last_meter_average is not None and dg_auto:
@@ -2045,9 +2148,36 @@ class BrilliantISP:
                 pre_rgb, platform, cast(SensorInfo, p_sensor), self.parm_ccm).compute_linear())
             mapped = self._run_stage("tone_mapping_post", lambda: pre_ccm)
         else:
-            mapped = self._run_stage(
-                "tone_mapping_post", lambda: map_native(rgb_linear, config=resolved.spec)
-            )
+            tm_yaml = c_yaml.get("tone_mapping", {})
+            rgb_norm = str(tm_yaml.get("rgb_norm", "luminance"))
+            if rgb_norm not in ("luminance", "max_rgb", "max_blend"):
+                raise ValueError(
+                    "tone_mapping.rgb_norm must be 'luminance', 'max_rgb' or 'max_blend'"
+                )
+
+            def _tone_map_post() -> np.ndarray:
+                if rgb_norm == "max_blend":
+                    desat = tm_yaml.get("near_white_desat")
+                    return map_native_max_blend(
+                        rgb_linear / tm_white,
+                        config=tm_spec,
+                        k=float(tm_yaml.get("rgb_norm_k", 1.0)),
+                        desat=tuple(desat) if desat is not None else None,
+                    )
+                if rgb_norm == "max_rgb":
+                    return map_native_max_rgb(rgb_linear / tm_white, config=tm_spec)
+                return map_native(rgb_linear / tm_white, config=tm_spec)
+            mapped = self._run_stage("tone_mapping_post", _tone_map_post)
+            if aw_cfg:
+                self._tm_white_next = adaptive_white.next_white(
+                    (
+                        tm_white
+                        if (hint_state is not None and getattr(hint_state, "tone_white", None))
+                        else None
+                    ),
+                    adaptive_white.desired_white(rgb_linear, aw_cfg),
+                    aw_cfg,
+                )
             self._save_native_tone_mapping_diagnostics(
                 mapped, stage="tone_mapping_post", resolved=resolved
             )
@@ -2061,6 +2191,23 @@ class BrilliantISP:
                 )
             return np.asarray(m)
         mapped = np.asarray(self._run_stage("saturation", _saturation), dtype=np.float64)
+
+        # Opt-in luminance-preserving highlight gamut compression: pull channels
+        # that exceed display white toward luminance instead of hard-clipping.
+        tm_section = c_yaml.get("tone_mapping", {})
+        if bool(tm_section.get("gamut_compress", False)):
+            white = float(tm_section.get("gamut_compress_peak", 1.0))
+            if not 0.0 < white <= 1.0:
+                raise ValueError("tone_mapping.gamut_compress_peak must be in (0, 1]")
+
+            def _gamut_compress(m=mapped) -> np.ndarray:
+                y = np.clip(luminance(m, matrix="bt709", dtype=np.float64), 0.0, white)[..., None]
+                peak = np.max(m, axis=-1, keepdims=True)
+                t = np.where(peak > white, (white - y) / np.maximum(peak - y, 1e-12), 1.0)
+                return y + np.clip(t, 0.0, 1.0) * (m - y)
+            mapped = np.asarray(
+                self._run_stage("gamut_compress", _gamut_compress), dtype=np.float64
+            )
 
         # ---------------------------------------------------------------
         # Output spec + luma/display blocks + scale
@@ -2181,6 +2328,20 @@ class BrilliantISP:
             "linear_reference_code_max": declared_max,
             "next_digital_gain_index": int(next_idx),
         }
+        if self._smooth_gain is not None:
+            self.last_feedback.update({
+                "ae_gain": float(self._smooth_gain),
+                "ae_next_gain": float(self._smooth_gain),
+                "ae_desired_gain": smooth_desired,
+            })
+        if getattr(self, "_tm_white", None) is not None:
+            self.last_feedback["tm_white"] = float(self._tm_white)
+            if self._tm_white_next is not None:
+                self.last_feedback["tm_white_next"] = float(self._tm_white_next)
+        if getattr(self, "last_awb_raw_estimate", None) is not None and awb_temporal.is_active(
+            self.parm_awb
+        ):
+            self.last_feedback["awb_raw_estimate"] = self.last_awb_raw_estimate
 
         # ---------------------------------------------------------------
         # Explicit writer (only when options.save_outputs or facade default,

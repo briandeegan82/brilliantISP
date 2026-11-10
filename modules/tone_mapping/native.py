@@ -120,3 +120,71 @@ def map_native(
         return as_float32(out, name="native_rgb_tone_map")
     except ValueError as exc:
         raise ToneMappingError(str(exc)) from exc
+
+
+def map_native_max_rgb(image: np.ndarray, *, config: ToneMappingSpec) -> np.ndarray:
+    """Apply the same global curve to max(R, G, B) and rescale RGB by that ratio.
+
+    Hue-preserving; unlike luminance recombination, saturated colours cannot push
+    a channel above the curve's output range.
+    """
+    if not config.enabled:
+        return image
+    rgb = _native_float_source(image).astype(np.float64)
+    if rgb.ndim != 3:
+        raise ToneMappingError("max_rgb tone mapping requires an HxWx3 RGB image")
+    norm = np.maximum(np.max(rgb, axis=-1), 0.0)
+    mapped_n = _map_plane(norm, config, None)
+    safe = np.where(norm > _RGB_Y_FLOOR, norm, 1.0)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        out = rgb * (mapped_n / safe)[..., None]
+    out[norm <= _RGB_Y_FLOOR] = 0.0
+    try:
+        return as_float32(out, name="native_max_rgb_tone_map")
+    except ValueError as exc:
+        raise ToneMappingError(str(exc)) from exc
+
+
+def map_native_max_blend(
+    image: np.ndarray,
+    *,
+    config: ToneMappingSpec,
+    k: float = 1.0,
+    desat: tuple[float, float] | None = None,
+) -> np.ndarray:
+    """Global norm N = max(Y, k * max(R, G, B)); out = rgb * f(N) / N.
+
+    Monotone in exposure: scaling the input by t gives rgb * f(t N) / N, which rises with t
+    because f does. k = 0 is luminance recombination, k = 1 is max_rgb; for 0 < k < 1,
+    colours with k * max <= Y (most midtones) follow the luminance path, so grey-preserving
+    WB steps do not move their luma, and saturated colours are bounded by the max channel.
+    ``desat`` = (d0, d1) pulls pixels whose max output channel is in [d0, d1] toward neutral
+    at their own output luma (luma unchanged, so monotonicity is kept).
+    """
+    if not config.enabled:
+        return image
+    k = float(k)
+    if not 0.0 <= k <= 1.0:
+        raise ToneMappingError("tone_mapping.rgb_norm_k must be in [0, 1]")
+    rgb = _native_float_source(image).astype(np.float64)
+    if rgb.ndim != 3:
+        raise ToneMappingError("max_blend tone mapping requires an HxWx3 RGB image")
+    y = np.maximum(_rgb_luma(rgb, dtype=np.float64), 0.0)
+    norm = np.maximum(y, k * np.maximum(np.max(rgb, axis=-1), 0.0))
+    mapped_n = _map_plane(norm, config, None)
+    safe = np.where(norm > _RGB_Y_FLOOR, norm, 1.0)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        out = rgb * (mapped_n / safe)[..., None]
+    out[norm <= _RGB_Y_FLOOR] = 0.0
+    if desat is not None:
+        d0, d1 = (float(v) for v in desat)
+        if not 0.0 <= d0 < d1:
+            raise ToneMappingError("tone_mapping.near_white_desat must satisfy 0 <= lo < hi")
+        peak = np.max(out, axis=-1, keepdims=True)
+        s = np.clip((peak - d0) / (d1 - d0), 0.0, 1.0)
+        y_out = np.maximum(_rgb_luma(out, dtype=np.float64), 0.0)[..., None]
+        out = out + s * (y_out - out)
+    try:
+        return as_float32(out, name="native_max_blend_tone_map")
+    except ValueError as exc:
+        raise ToneMappingError(str(exc)) from exc
