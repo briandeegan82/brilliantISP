@@ -16,6 +16,8 @@ It is developed by Brian Deegan and is based in part on [Infinite-ISP](https://g
 - HDR-aware RAW loading paths (including packed/high-bit-depth formats)
 - Multiple tone mappers (`reinhard_integer`, `aces`, `aces_integer`, `hable`, `hable_integer`, `hdr_durand`)
 - Config merge model (`*_cam.yml` overlays merged on top of `config/base_hdr.yml`)
+- Temporal 3A for video: opt-in smooth continuous AE, AWB locus/range limits with temporal filtering, and AE/AWB metering ROIs (tuned examples in `config/r04q/`)
+- Hue-preserving RGB tone-map recombination (`rgb_norm: luminance | max_rgb | max_blend`)
 - Optional debug histogram generation in pipeline
 - Interactive tuning GUI with live reprocess and analysis tools
 
@@ -25,7 +27,7 @@ It is developed by Brian Deegan and is based in part on [Infinite-ISP](https://g
 - `isp_pipeline.py` - simplest single-image pipeline entry script
 - `tools/isp_tuning_gui.py` - tuning GUI
 - `tools/isp_calibration_gui.py` - two-window calibration GUI (format + ISP YAML)
-- `config/` - base and camera-specific YAML configs
+- `config/` - base and camera-specific YAML configs (`config/r04q/` - tuned SVS/AD configs for the Limerick vehicle)
 - `modules/` - individual ISP block implementations
 - `util/` - config helpers, histogram/debug utilities, shared types
 - `docs/` - deep dives and tuning references
@@ -150,8 +152,13 @@ These scripts are practical templates and may require local path edits before us
 
 ## Documentation Index
 
+- `docs/README.md` - full documentation index
+- `docs/ISP_BLOCKS_AND_TUNING.md` - pipeline order and tuning guide, incl. smooth AE, AWB filtering, metering ROI and `rgb_norm`
+- `docs/ARCHITECTURE.md` - native engine API, contracts and AE controller
+- `docs/CONFIGURATION.md` - config loading, `extends`, validation and migration
+- `docs/RAW_INPUT.md` - RAW decode contract (`sensor_info` storage fields)
+- `docs/blocks/tone_mapping.md` - unified tone-mapping engine contract
 - `docs/GUI_DESIGN.md` - calibration GUI specification
-- `docs/ISP_BLOCKS_AND_TUNING.md` - pipeline order and tuning guide
 - `docs/GAMMA_CORRECTION_FINAL_SOLUTION.md` - gamma placement and rationale
 - `docs/PPG_DEMOSAIC.md` - PPG demosaic details
 - `docs/VNG_DEMOSAIC.md` - VNG demosaic details

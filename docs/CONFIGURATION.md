@@ -214,4 +214,6 @@ is enabled. `hdr_durand` and the other legacy operator sections remain
 optional known sections; the old `aces.output_transform` enum is removed
 (legacy fields are ignored with notices). Migration:
 `tools/migrate_tone_mapping.py` produces a canonical schema-v1 config
-plus report. Full contract: `docs/blocks/tone_mapping.md`.
+plus report. Full contract: `docs/blocks/tone_mapping.md`. The native
+post-CCM RGB path also reads `rgb_norm`, `rgb_norm_k`, `near_white_desat`
+and `adaptive_white`; see `docs/ISP_BLOCKS_AND_TUNING.md`.

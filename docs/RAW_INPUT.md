@@ -25,6 +25,7 @@ rejected with the expected layout in the message.
 | `word_order` | `low_first`/`high_first` for `word_pair32` |
 | `horizontal_flip` / `vertical_flip` | mirrors applied after decode/trim |
 | `embedded_rows_top` / `embedded_rows_bottom` | metadata rows trimmed before flips |
+| `realign_columns_from` | optional; columns `[n, width)` were read out one column early: shift right by one and refill column `n` from the same CFA colour (applied before the embedded-row trim) |
 | `source_format` | `auto`/`raw`/`pgm`/`tiff`/`rawpy` |
 
 When neither `storage_format` nor `data_format` is present, storage

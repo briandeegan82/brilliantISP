@@ -44,7 +44,11 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 
 **Tone mapping placement:** `tone_mapping_before_demosaic: true` runs TMO on **Bayer** data (after WB, before demosaic). `false` runs TMO on **linear RGB** after CCM. Normalization uses `sensor_info.hdr_bit_depth` before demosaic and full scale after demosaic.
 
-**Auto-exposure loop:** When `digital_gain.is_auto` and `auto_exposure.exposure_correction_mode` is `direct`, the pipeline may run **two** passes from digital gain through AE so the second pass applies the gain index chosen from the first meter reading (`rerun_from_digital_gain`, default `true`).
+**Auto-exposure loop:** When `digital_gain.is_auto` and `auto_exposure.exposure_correction_mode` is `direct`, the pipeline may run **two** passes from digital gain through AE so the second pass applies the gain index chosen from the first meter reading (`rerun_from_digital_gain`, default `true`). With `auto_exposure.smooth_control: true` the gain is continuous instead (see [Smooth AE controller](#smooth-ae-controller-auto_exposuresmooth_control)).
+
+### Sequence processing and 3A state
+
+The temporal controls below (smooth AE, AWB filtering, adaptive white) only act across frames when the caller threads one `util.pipeline_types.ProcessingState` through consecutive calls, e.g. `process_frame(raw, cfg, state=state)` with the same `state` object for every frame of a clip. The state carries `previous_awb_gains`, `digital_gain_index`, `ae_gain` and `tone_white`. Without it every frame starts from the configured defaults, so time constants and slew limits have no effect.
 
 ---
 
@@ -68,6 +72,8 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 - **`output_bit_depth`**: Final display bit depth (often 8).
 - **`data_format`**, **`endian_type`**, **`data_alignment`**: Raw loading (e.g. `uint16`, `ieee-le`, `MSB`/`LSB`). `MSB` right-shifts left-justified samples into the low `bit_depth` bits.
 - **`horizontal_flip`**, **`vertical_flip`**: Mirror the loaded RAW/PGM Bayer plane before the rest of the pipeline. `bayer_pattern` is the CFA after these flips.
+- **`embedded_rows_top`**, **`embedded_rows_bottom`**: Metadata rows trimmed from the raster before flips (see `docs/RAW_INPUT.md`).
+- **`realign_columns_from`** (optional, default off): First column of a block that the sensor reads out one column early. Columns `[n, width)` are shifted right by one and column `n` is filled from the same CFA colour two columns to the left, restoring the CFA phase. The Limerick SVS cameras need `1888` (the last 32 columns otherwise show a magenta edge line).
 
 **Tuning:** Wrong `width`/`height` or `bayer_pattern` causes color fringing, wrong WB, or load failures. Align `hdr_bit_depth` with your PWC/tone-map pipeline.
 
@@ -165,6 +171,19 @@ Order matches `BrilliantISP.run_pipeline()` (and `run_pipeline_up_to_wb()` for t
 
 Optional **`roi`** (see [Metering ROI](#metering-roi-auto_exposureroi-auto_white_balanceroi)): AWB samples only pixels with a positive ROI weight; positive zone weights are treated equally.
 
+#### AWB plausibility limits and temporal filter (`modules/auto_white_balance/temporal.py`)
+
+All optional; when none is present AWB behaves as before. Applied in this order to each new estimate:
+
+| Key | Meaning |
+|-----|---------|
+| `low_light_prior: [r, b]`, `low_light_gain_range: [g0, g1]` | Blend the estimate toward fixed gains as the applied digital gain rises from `g0` to `g1` (log-linear weight 0→1). Stops night scenes lit by sodium/LED sources from dragging WB. |
+| `gain_locus: [[r, b], ...]`, `locus_max_distance` | Illuminant locus polyline (≥ 2 points, gains). The estimate is pulled to within `locus_max_distance` (natural-log gain units) of the polyline. |
+| `r_gain_range`, `b_gain_range: [lo, hi]` | Final plausibility box. |
+| `time_constant_s`, `max_rate_per_s`, `frame_rate` | First-order IIR on log gains plus a slew limit (1/s); per-frame coefficients come from `frame_rate` (Hz). Needs sequence state. |
+
+**Tuning:** derive the locus from AWB estimates on neutral scene content under known illuminants; a tight `locus_max_distance` (e.g. 0.10) suppresses green/magenta casts without blocking warm↔cool changes along the locus.
+
 **WB keys:** `is_enable`, `r_gain`, `b_gain`. **`white_balance.is_auto`** is synced from `auto_white_balance.is_enable` at load.
 
 **Tuning:** Enable AWB for general scenes; use manual `r_gain`/`b_gain` for charts or when AWB is unstable. PCA `percentage` affects outlier rejection. For HDR, extremes are clipped using `hdr_bit_depth`—keep saturation settings consistent.
@@ -194,6 +213,17 @@ Optional **`roi`** (see [Metering ROI](#metering-roi-auto_exposureroi-auto_white
 - **Global vs local:** Durand preserves local contrast; Reinhard/Hable/ACES are smoother globally but may flatten or clip highlights differently.
 - **Washout:** Try `normalize_output` / `use_normalization` on integer paths, or adjust `hdr_scale` / `aces_integer` exposure.
 - **Curves:** `is_plot_curve` in some sections saves debug curve plots under `module_output` when enabled.
+
+#### RGB recombination and white handling (native post-CCM path)
+
+These `tone_mapping` keys apply when tone mapping runs on RGB after CCM:
+
+- **`rgb_norm`**: the per-pixel value the global curve `f` is applied to; RGB is rescaled by `f(N)/N`, so hue is preserved.
+  - `luminance` (default): `N = Y` (Rec.709). Saturated colours can push a channel past the output range.
+  - `max_rgb`: `N = max(R, G, B)`; no channel can exceed the curve's output, at the cost of darker saturated colours.
+  - `max_blend`: `N = max(Y, k * max(R, G, B))` with `rgb_norm_k = k` in [0, 1]. `k = 0` is `luminance`, `k = 1` is `max_rgb`. Monotone in exposure for every `k`, and most midtones follow the luminance path, so grey-preserving WB steps do not change their luma.
+- **`near_white_desat: [d0, d1]`** (optional): pixels whose largest output channel is in `[d0, d1]` are pulled toward neutral at their own output luma, so near-white highlights roll off to white instead of a tinted plateau. Luma is unchanged, so monotonicity is kept. Caution: bright saturated reds/ambers (tail lights, signals) are also desaturated and can look grey.
+- **`adaptive_white`** (optional mapping, `modules/tone_mapping/adaptive_white.py`): scene-adaptive global white point. Per frame, a high percentile (`percentile`, default 99.7) of max(R,G,B) sets the desired white W in [1, `max_white`] (default 8); W is low-pass filtered in the log domain (`time_constant_s`, default 1; `frame_rate`, default 10; `meter_stride`, default 8) and applied to the **next** frame as `f(g*n)/f(g*W)`. Needs sequence state.
 
 #### Float vs integer ACES / Hable (equivalence and matching)
 
@@ -267,6 +297,26 @@ auto_exposure:
 ```
 
 All keys except `is_enable` are optional; unknown keys, out-of-range rectangles and an ROI that selects no pixels are errors. The CPU engine implements the ROI; `brilliantisp_gpu` does not read it.
+
+#### Smooth AE controller (`auto_exposure.smooth_control`)
+
+Opt-in (`modules/auto_exposure/smooth_control.py`); requires `auto_exposure.is_enable` and `digital_gain.is_auto`. Instead of stepping through `digital_gain.gain_array`, AE picks a **continuous** gain so that the mean **tone-mapped** luminance of the metered pixels (subsampled by `meter_stride`, weighted by `roi` when set) equals the output target. The demand is then filtered in the log2 domain: deadband → first-order IIR → slew limit. All time constants are in seconds; per-frame coefficients come from `frame_rate`, so behaviour does not depend on the frame rate. When `bayer_noise_reduction` is disabled the new gain is applied within the same pass by linear scaling; otherwise a second pass reruns from digital gain. Needs sequence state to smooth across frames.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `output_target` | 0.18 | Target mean tone-mapped luminance (0–1, display-linear). |
+| `time_constant_s` | 0.35 | IIR time constant. |
+| `deadband_stops` | 0.05 | Errors smaller than this do not move the gain. |
+| `max_rate_stops_per_s` | 5.0 | Slew limit. |
+| `frame_rate` | 30.0 | Frame rate (Hz) used to derive per-frame coefficients. |
+| `gain_min`, `gain_max` | 1/32, 16384 | Gain limits. |
+| `meter_stride` | 8 | Meter subsampling. |
+| `highlight_clip` | 1.0 | Tone-mapped meter values are clipped here before averaging. |
+| `low_light_target_stops`, `low_light_gain_range` | 0, [1e4, 1e5] | Lower the target by up to this many stops as gain rises through the range (log-linear). |
+| `target_schedule` | none | `[[gain, stops], ...]` (≥ 2 points): target = `output_target * 2**stops(gain)`, interpolated in log gain, flat beyond the ends. Overrides `low_light_target_stops`. |
+| `low_light_deadband_stops` | none | Deadband widened toward this value across `low_light_gain_range`, so noisy night metering does not cause gain hunting. |
+| `max_clip_fraction`, `clip_level`, `clip_max_backoff_stops` | 1.0, 0.98, 1.0 | Highlight protection: with `max_clip_fraction < 1` the gain is reduced so at most that fraction of metered pixels has a peak channel above `clip_level`, backing off at most `clip_max_backoff_stops`. |
+| `model_rgb_norm` | false | Meter through the same `tone_mapping.rgb_norm` (`max_rgb`/`max_blend`) the output uses, so AE predicts output luma correctly. Use whenever `rgb_norm` is not `luminance`. |
 
 ---
 
@@ -349,6 +399,19 @@ All keys except `is_enable` are optional; unknown keys, out-of-range rectangles 
 **Tuning:** If enabled without matching display path, you may need YUV→RGB for preview (handled in `brilliant_isp` when visualizing).
 
 ---
+
+## Example tuned configs: `config/r04q/`
+
+Full (non-`extends`) configs from the 2026 3A tuning study for the Limerick vehicle, intended for sequence processing at 10 fps:
+
+| File | Camera |
+|------|--------|
+| `AD.yml` | AD cameras (FL/FR/RL/RR); `rgb_norm: max_rgb`, lower-frame AE/AWB ROI |
+| `SVS.yml` | SVS base (no ROI); `rgb_norm: max_blend`, `rgb_norm_k: 0.85`, `realign_columns_from: 1888` |
+| `SVS_FV.yml`, `SVS_RV.yml` | SVS front/rear: base plus fisheye image-circle ROIs measured from raw |
+| `SVS_MVL.yml`, `SVS_MVR.yml` | SVS mirror cameras: image circle from the vehicle intrinsics, minus car body and mirror housing |
+
+All use smooth AE (`output_target` 0.18 AD / 0.16 SVS, SVS `target_schedule` and `model_rgb_norm`), AWB temporal filtering (`time_constant_s: 1.0`) with `r_gain_range`/`b_gain_range` limits (SVS also `gain_locus` with `locus_max_distance: 0.10`) and `near_white_desat: [0.8, 0.97]`. The first line of each file records how it was generated. Known open issues: SVS has no calibrated CCM, SVS road colour casts remain at dusk/night, and `near_white_desat` greys bright reds/ambers.
 
 ## Debugging tips
 
