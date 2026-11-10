@@ -19,6 +19,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class SmoothAEParams:
+    """Validated smooth-AE parameters from ``auto_exposure``."""
+
     output_target: float = 0.18
     time_constant_s: float = 0.35
     deadband_stops: float = 0.05
@@ -38,6 +40,7 @@ class SmoothAEParams:
 
     @classmethod
     def from_config(cls, parm_ae: Mapping[str, Any]) -> "SmoothAEParams":
+        """Build from an ``auto_exposure`` config section; raises ValueError if invalid."""
         d = cls()
         out = cls(
             output_target=float(parm_ae.get("output_target", d.output_target)),
@@ -49,28 +52,53 @@ class SmoothAEParams:
             gain_max=float(parm_ae.get("gain_max", d.gain_max)),
             meter_stride=int(parm_ae.get("meter_stride", d.meter_stride)),
             highlight_clip=float(parm_ae.get("highlight_clip", d.highlight_clip)),
-            low_light_target_stops=float(parm_ae.get("low_light_target_stops", d.low_light_target_stops)),
-            low_light_gain_range=tuple(float(v) for v in parm_ae.get("low_light_gain_range", d.low_light_gain_range)),
+            low_light_target_stops=float(
+                parm_ae.get("low_light_target_stops", d.low_light_target_stops)
+            ),
+            low_light_gain_range=tuple(
+                float(v) for v in parm_ae.get("low_light_gain_range", d.low_light_gain_range)
+            ),
             clip_level=float(parm_ae.get("clip_level", d.clip_level)),
             max_clip_fraction=float(parm_ae.get("max_clip_fraction", d.max_clip_fraction)),
-            clip_max_backoff_stops=float(parm_ae.get("clip_max_backoff_stops", d.clip_max_backoff_stops)),
-            low_light_deadband_stops=(None if parm_ae.get("low_light_deadband_stops") is None
-                                      else float(parm_ae["low_light_deadband_stops"])),
-            target_schedule=(None if parm_ae.get("target_schedule") is None
-                             else tuple((float(g), float(st)) for g, st in parm_ae["target_schedule"])),
+            clip_max_backoff_stops=float(
+                parm_ae.get("clip_max_backoff_stops", d.clip_max_backoff_stops)
+            ),
+            low_light_deadband_stops=(
+                None
+                if parm_ae.get("low_light_deadband_stops") is None
+                else float(parm_ae["low_light_deadband_stops"])
+            ),
+            target_schedule=(
+                None
+                if parm_ae.get("target_schedule") is None
+                else tuple((float(g), float(st)) for g, st in parm_ae["target_schedule"])
+            ),
         )
         ts = out.target_schedule
-        if ts is not None and (len(ts) < 2 or any(g <= 0 or not math.isfinite(st) for g, st in ts)
-                               or any(b[0] <= a[0] for a, b in zip(ts, ts[1:]))):
-            raise ValueError("auto_exposure.target_schedule must be >= 2 [gain, stops] points, gains increasing")
+        if ts is not None and (
+            len(ts) < 2
+            or any(g <= 0 or not math.isfinite(st) for g, st in ts)
+            or any(b[0] <= a[0] for a, b in zip(ts, ts[1:]))
+        ):
+            raise ValueError(
+                "auto_exposure.target_schedule must be >= 2 [gain, stops] points, gains increasing"
+            )
         g0, g1 = out.low_light_gain_range
-        if not (0 < out.output_target < 1 and out.time_constant_s >= 0 and out.deadband_stops >= 0
-                and out.max_rate_stops_per_s > 0 and out.frame_rate > 0
-                and 0 < out.gain_min < out.gain_max and out.meter_stride >= 1
-                and out.low_light_target_stops >= 0 and 0 < g0 < g1
-                and 0 < out.clip_level <= 1 and 0 < out.max_clip_fraction <= 1
-                and out.clip_max_backoff_stops >= 0
-                and (out.low_light_deadband_stops is None or out.low_light_deadband_stops >= 0)):
+        if not (
+            0 < out.output_target < 1
+            and out.time_constant_s >= 0
+            and out.deadband_stops >= 0
+            and out.max_rate_stops_per_s > 0
+            and out.frame_rate > 0
+            and 0 < out.gain_min < out.gain_max
+            and out.meter_stride >= 1
+            and out.low_light_target_stops >= 0
+            and 0 < g0 < g1
+            and 0 < out.clip_level <= 1
+            and 0 < out.max_clip_fraction <= 1
+            and out.clip_max_backoff_stops >= 0
+            and (out.low_light_deadband_stops is None or out.low_light_deadband_stops >= 0)
+        ):
             raise ValueError(f"invalid smooth AE parameters: {out}")
         return out
 
@@ -83,6 +111,7 @@ class SmoothAEParams:
 
     @property
     def max_step_stops(self) -> float:
+        """Per-frame slew limit in stops."""
         return self.max_rate_stops_per_s / self.frame_rate
 
     def target_at(self, gain: float) -> float:
@@ -97,7 +126,9 @@ class SmoothAEParams:
             return self.output_target * 2.0 ** float(np.interp(math.log2(gain), lg, st))
         if self.low_light_target_stops == 0:
             return self.output_target
-        return self.output_target * 2.0 ** (-self.low_light_target_stops * self.low_light_weight(gain))
+        return self.output_target * 2.0 ** (
+            -self.low_light_target_stops * self.low_light_weight(gain)
+        )
 
     def low_light_weight(self, gain: float) -> float:
         """0 below ``low_light_gain_range``, 1 above it, log-linear in between."""
@@ -161,13 +192,13 @@ def solve_gain(
 
     def bisect(f: Callable[[float], float]) -> float:
         lo, hi = math.log2(p.gain_min), math.log2(p.gain_max)
-        if f(2.0 ** hi) <= 0:
+        if f(2.0**hi) <= 0:
             return p.gain_max
-        if f(2.0 ** lo) >= 0:
+        if f(2.0**lo) >= 0:
             return p.gain_min
         for _ in range(iterations):
             mid = 0.5 * (lo + hi)
-            if f(2.0 ** mid) < 0:
+            if f(2.0**mid) < 0:
                 lo = mid
             else:
                 hi = mid
@@ -175,7 +206,7 @@ def solve_gain(
 
     gain = bisect(excess)
     if p.max_clip_fraction < 1.0 and clipped(gain) > 0:
-        gain = max(bisect(clipped), gain * 2.0 ** -p.clip_max_backoff_stops)
+        gain = max(bisect(clipped), gain * 2.0**-p.clip_max_backoff_stops)
     return gain
 
 
@@ -190,4 +221,4 @@ def next_gain(previous: float | None, desired: float, p: SmoothAEParams) -> floa
         return float(previous)
     err -= math.copysign(deadband, err)
     step = float(np.clip(p.alpha * err, -p.max_step_stops, p.max_step_stops))
-    return float(np.clip(previous * 2.0 ** step, p.gain_min, p.gain_max))
+    return float(np.clip(previous * 2.0**step, p.gain_min, p.gain_max))

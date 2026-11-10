@@ -1,8 +1,13 @@
+"""Tests for the max_rgb / max_blend RGB norms and adaptive white."""
+
+# pylint: disable=missing-function-docstring
 import numpy as np
 import pytest
 
-from modules.tone_mapping.native import map_native, map_native_max_rgb
+from modules.tone_mapping import adaptive_white as aw
+from modules.tone_mapping.native import map_native, map_native_max_blend, map_native_max_rgb
 from modules.tone_mapping.registry import ToneMappingError, ToneMappingSpec
+from util.color import luminance
 
 
 @pytest.mark.parametrize("operator", ("reinhard", "hable", "aces_fitted"))
@@ -27,8 +32,13 @@ def test_max_rgb_black_and_validation():
 
 
 C2_COLOURS = {
-    "red": (1.0, 0.12, 0.08), "sodium": (1.0, 0.55, 0.15), "sky": (0.45, 0.70, 1.0),
-    "pale_sky": (0.75, 0.85, 1.0), "green": (0.2, 1.0, 0.3), "yellow": (1.0, 0.9, 0.1), "grey": (1.0, 1.0, 1.0),
+    "red": (1.0, 0.12, 0.08),
+    "sodium": (1.0, 0.55, 0.15),
+    "sky": (0.45, 0.70, 1.0),
+    "pale_sky": (0.75, 0.85, 1.0),
+    "green": (0.2, 1.0, 0.3),
+    "yellow": (1.0, 0.9, 0.1),
+    "grey": (1.0, 1.0, 1.0),
 }
 
 
@@ -37,14 +47,14 @@ C2_COLOURS = {
 @pytest.mark.parametrize("desat", (None, (0.8, 0.97)))
 def test_max_blend_output_luma_is_monotone_in_exposure(operator, k, desat):
     """C2: fixed scene colour, exposure swept over 4.5 decades; no output-luma reversal > 0.1%."""
-    from modules.tone_mapping.native import map_native_max_blend
-    from util.color import luminance
 
     spec = ToneMappingSpec(operator, backend="float")
     s = np.logspace(-3, 1.5, 4000)
     for name, c in C2_COLOURS.items():
         img = (s[:, None] * np.array(c))[None].astype(np.float32)
-        y = luminance(np.asarray(map_native_max_blend(img, config=spec, k=k, desat=desat), np.float64))[0]
+        y = luminance(
+            np.asarray(map_native_max_blend(img, config=spec, k=k, desat=desat), np.float64)
+        )[0]
         peak = np.maximum.accumulate(y)
         drop = float(np.max((peak - y) / np.maximum(peak, 1e-9)))
         assert drop <= 1e-3, (name, drop)
@@ -52,14 +62,22 @@ def test_max_blend_output_luma_is_monotone_in_exposure(operator, k, desat):
 
 
 def test_max_blend_endpoints_and_midtone_luma():
-    from modules.tone_mapping.native import map_native_max_blend
-    from util.color import luminance
 
     spec = ToneMappingSpec("reinhard", backend="float")
-    hot = np.array([[[0.02, 0.05, 0.9], [0.4, 0.3, 0.05], [0.10, 0.12, 0.08]]], dtype=np.float32) * 4.0
-    assert np.allclose(map_native_max_blend(hot, config=spec, k=1.0), map_native_max_rgb(hot, config=spec), atol=1e-6)
-    assert np.allclose(map_native_max_blend(hot, config=spec, k=0.0), map_native(hot, config=spec), atol=1e-6)
-    # mildly coloured midtone with k*max <= Y follows luminance, and a grey-preserving WB step keeps its luma
+    hot = (
+        np.array([[[0.02, 0.05, 0.9], [0.4, 0.3, 0.05], [0.10, 0.12, 0.08]]], dtype=np.float32)
+        * 4.0
+    )
+    assert np.allclose(
+        map_native_max_blend(hot, config=spec, k=1.0),
+        map_native_max_rgb(hot, config=spec),
+        atol=1e-6,
+    )
+    assert np.allclose(
+        map_native_max_blend(hot, config=spec, k=0.0), map_native(hot, config=spec), atol=1e-6
+    )
+    # mildly coloured midtone with k*max <= Y follows luminance,
+    # and a grey-preserving WB step keeps its luma
     a = np.array([[[0.10, 0.12, 0.08]]], dtype=np.float32)
     b = a * np.array([1.0, 1.0, 1.15], dtype=np.float32)
     b = b * float(luminance(a.astype(np.float64)).sum() / luminance(b.astype(np.float64)).sum())
@@ -69,9 +87,7 @@ def test_max_blend_endpoints_and_midtone_luma():
 
 
 def test_max_blend_luma_matches_ae_model():
-    """Smooth AE models output luma as f(Y*r)/r with r = max(1, k*max/Y) (brilliant_isp model_rgb_norm)."""
-    from modules.tone_mapping.native import map_native_max_blend
-    from util.color import luminance
+    """Smooth AE models output luma as f(Y*r)/r, r = max(1, k*max/Y) (model_rgb_norm)."""
 
     spec = ToneMappingSpec("reinhard", backend="float")
     rng = np.random.default_rng(0)
@@ -80,13 +96,13 @@ def test_max_blend_luma_matches_ae_model():
     y = luminance(rgb.astype(np.float64))
     r = np.maximum(1.0, k * rgb.max(-1) / y)
     model = np.asarray(map_native(y * r, config=spec), np.float64) / r
-    out = luminance(np.asarray(map_native_max_blend(rgb.astype(np.float32), config=spec, k=k), np.float64))
+    out = luminance(
+        np.asarray(map_native_max_blend(rgb.astype(np.float32), config=spec, k=k), np.float64)
+    )
     assert np.allclose(out, model, rtol=1e-5, atol=1e-6)
 
 
 def test_max_blend_near_white_desat_and_validation():
-    from modules.tone_mapping.native import map_native_max_blend
-    from util.color import luminance
 
     spec = ToneMappingSpec("reinhard", backend="float")
     lamp = np.array([[[40.0, 20.0, 2.0]]], dtype=np.float32)
@@ -101,9 +117,14 @@ def test_max_blend_near_white_desat_and_validation():
 
 
 def test_adaptive_white_desired_and_filter():
-    from modules.tone_mapping import adaptive_white as aw
 
-    cfg = {"percentile": 99.0, "max_white": 4.0, "time_constant_s": 1.0, "frame_rate": 10.0, "meter_stride": 1}
+    cfg = {
+        "percentile": 99.0,
+        "max_white": 4.0,
+        "time_constant_s": 1.0,
+        "frame_rate": 10.0,
+        "meter_stride": 1,
+    }
     img = np.full((10, 10, 3), 0.2)
     assert aw.desired_white(img, cfg) == 1.0
     img[:5] = 9.0

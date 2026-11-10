@@ -1,3 +1,6 @@
+"""Tests for sensor_info.realign_columns_from."""
+
+# pylint: disable=missing-function-docstring
 import numpy as np
 import pytest
 
@@ -5,8 +8,15 @@ from util.raw_decode import RawFormat, RawFormatError, decode_raw_bytes
 
 
 def _fmt(**kw):
-    return RawFormat(width=8, height=4, bayer_pattern="gbrg", bit_depth=12,
-                     storage_format="uint16", byte_order="big", **kw)
+    return RawFormat(
+        width=8,
+        height=4,
+        bayer_pattern="gbrg",
+        bit_depth=12,
+        storage_format="uint16",
+        byte_order="big",
+        **kw
+    )
 
 
 def test_realign_shifts_tail_columns_right_and_fills_same_colour():

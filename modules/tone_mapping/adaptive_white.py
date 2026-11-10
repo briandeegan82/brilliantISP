@@ -25,12 +25,15 @@ def _params(cfg: Mapping[str, Any]) -> tuple[float, float, float, float, int]:
     fps = float(cfg.get("frame_rate", 10.0))
     stride = int(cfg.get("meter_stride", 8))
     if not (0 < pct <= 100 and wmax >= 1 and tau >= 0 and fps > 0 and stride >= 1):
-        raise ValueError("tone_mapping.adaptive_white: need 0<percentile<=100, max_white>=1, "
-                         "time_constant_s>=0, frame_rate>0, meter_stride>=1")
+        raise ValueError(
+            "tone_mapping.adaptive_white: need 0<percentile<=100, max_white>=1, "
+            "time_constant_s>=0, frame_rate>0, meter_stride>=1"
+        )
     return pct, wmax, tau, fps, stride
 
 
 def desired_white(rgb_linear: np.ndarray, cfg: Mapping[str, Any]) -> float:
+    """Per-frame white point: percentile of max(R,G,B), clipped to [1, max_white]."""
     pct, wmax, _, _, stride = _params(cfg)
     sub = np.asarray(rgb_linear, dtype=np.float64)[::stride, ::stride]
     peak = np.max(sub, axis=-1)
@@ -40,6 +43,7 @@ def desired_white(rgb_linear: np.ndarray, cfg: Mapping[str, Any]) -> float:
 
 
 def next_white(previous: float | None, desired: float, cfg: Mapping[str, Any]) -> float:
+    """Log-domain IIR step from the previous white toward ``desired``."""
     _, wmax, tau, fps, _ = _params(cfg)
     desired = float(np.clip(desired, 1.0, wmax))
     if previous is None or not math.isfinite(previous) or previous < 1.0:
