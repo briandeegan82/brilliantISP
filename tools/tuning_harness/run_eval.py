@@ -143,7 +143,7 @@ def main() -> None:
     for cls, p in (("SVS", a.svs_config), ("AD", a.ad_config)):
         pp = Path(p) if Path(p).is_absolute() else Path(isp_root) / p
         cfgs[cls] = str(pp)
-        (out / f"config_{cls}.yml").write_text(pp.read_text())
+        (out / f"config_{cls}.yml").write_text(pp.read_text(encoding="utf-8"), encoding="utf-8")
     cam_cfgs = {}
     for item in a.cam_config:
         cam, _, p = item.partition("=")
@@ -152,7 +152,7 @@ def main() -> None:
                      f"{list(CAMERAS)}")
         pp = Path(p) if Path(p).is_absolute() else Path(isp_root) / p
         cam_cfgs[cam] = str(pp)
-        (out / f"config_{cam}.yml").write_text(pp.read_text())
+        (out / f"config_{cam}.yml").write_text(pp.read_text(encoding="utf-8"), encoding="utf-8")
     manifest = {"harness_version": HARNESS_VERSION, "isp_root": isp_root,
                 "git": _git_info(isp_root), "configs": cfgs, "cam_configs": cam_cfgs,
                 "scenes": scenes, "cams": a.cams, "max_frames": a.max_frames,
