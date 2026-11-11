@@ -9,7 +9,9 @@
   validation as implemented now.
 - `CODE_AUDIT.md` — M0 static audit ledger: architecture findings, per-file
   implementation inventory, test baseline, fixture gaps.
-- `ISP_BLOCKS_AND_TUNING.md` — overview of pipeline blocks and tuning notes.
+- `ISP_BLOCKS_AND_TUNING.md` — overview of pipeline blocks and tuning notes,
+  including smooth AE, AWB temporal filtering, metering ROI, `rgb_norm` and
+  the tuned `config/r04q/` presets.
 - `BOLTISP_YAML_COMPATIBILITY.md` — boltISP export compatibility notes.
 
 ## GUI

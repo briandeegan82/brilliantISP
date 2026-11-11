@@ -129,6 +129,15 @@ the standard direct+auto rerun, 1 without rerun). `run_pipeline_up_to_wb`
 profiles a single native pass through the same helpers — it does not run
 the final AE convergence loop.
 
+With `auto_exposure.smooth_control: true` (`modules/auto_exposure/smooth_control.py`)
+the controller instead solves a continuous gain whose tone-mapped mean hits
+`output_target`, then applies a log-domain deadband, IIR and slew limit
+against the previous frame's gain. Stop reasons are `smooth` (applied in-pass
+by linear scaling when BNR is off) and `smooth_rerun` (second pass). The
+applied gain is reported as `ae_next_gain` and carried in
+`ProcessingState.ae_gain` by `process_frame`; AWB gains and the adaptive tone
+white (`tone_white`) are carried the same way.
+
 ## Output / IO separation
 
 - `last_output_native`, `last_output_rgb`, `last_output_metadata` are
