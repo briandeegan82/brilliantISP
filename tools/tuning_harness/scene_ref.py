@@ -10,21 +10,24 @@ import json
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import (CAMERAS, EGO_CUT, GEOM, OCCLUDERS, PWL, SCENE_CLASS, SCENES, linearize,  # noqa: E402
-                    mask_path, read_raw, scene_ref_stats)
+from common import (  # noqa: E402  # pylint: disable=wrong-import-position
+    CAMERAS, EGO_CUT, GEOM, OCCLUDERS, PWL, SCENE_CLASS, SCENES, mask_path, read_raw,
+    scene_ref_stats)
 
 MASK_SCENES = ("T1_urban_day", "T2_canopy_static", "T3_bridge_sky", "T4_motorway_dusk")
 
 
 def frames(scene: str, cam: str) -> list[Path]:
+    """Sorted raw frame paths of one scene/camera sequence."""
     return sorted((SCENES / scene / cam / "raw").glob("frame_*.raw"))
 
 
 def build_mask(cam: str) -> np.ndarray:
-    import cv2
+    """Active-area mask: lit lens image circle minus embedded rows, ego body and occluders."""
     cls = CAMERAS[cam]
     w, h, top, bot = GEOM[cls]
     # per-pixel max over day frames: anything ever lit is inside the lens image circle
@@ -39,7 +42,7 @@ def build_mask(cam: str) -> np.ndarray:
         act[h - bot:] = False
     k = np.ones((15, 15), np.uint8)
     act = cv2.morphologyEx(act.astype(np.uint8), cv2.MORPH_OPEN, k)
-    n, lab, st, _ = cv2.connectedComponentsWithStats(act, 8)
+    _, lab, st, _ = cv2.connectedComponentsWithStats(act, 8)
     big = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
     pts = cv2.findNonZero((lab == big).astype(np.uint8))
     hull = np.zeros((h, w), np.uint8)
@@ -64,6 +67,7 @@ def build_mask(cam: str) -> np.ndarray:
 
 
 def main() -> None:
+    """CLI: build missing masks and per-frame scene references."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenes", nargs="*", default=list(SCENE_CLASS))
     ap.add_argument("--rebuild-masks", action="store_true")

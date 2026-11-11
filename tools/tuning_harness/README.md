@@ -1,6 +1,6 @@
 # 3A tuning KPI harness (r04q)
 
-The frozen KPI harness (v1.1) and experiment protocol used to tune the r04q AE/AWB/tone-mapping presets in
+The frozen KPI harness (v1.2) and experiment protocol used to tune the r04q AE/AWB/tone-mapping presets in
 `config/r04q/`. It is kept for reproducibility. It is not part of the ISP and nothing imports it.
 
 | File | Purpose |
@@ -12,8 +12,18 @@ The frozen KPI harness (v1.1) and experiment protocol used to tune the r04q AE/A
 | `run_eval.py` | Runs every scene sequence through a brilliantISP checkout with 3A state carried frame to frame, then computes KPIs. |
 | `kpi.py` | KPI definitions: frame-to-frame brightness stability, AWB cast, exposure error, saturation. |
 | `overlay.py` | Debug overlays of masks and ROIs. |
-| `FROZEN.sha256` | Checksums of the frozen harness files; any KPI run must match them. |
+| `FROZEN.sha256` | Checksums of the frozen v1.2 harness files; any KPI run must match them. |
+| `FROZEN-v1.1.sha256` | Checksums of v1.1, the version every tuning round was run with. |
 | `extract_scenes.sh`, `run_baseline.sh` | How the scene sequences were extracted and the baseline was run. |
+
+## Versions
+
+- **v1.1:** every tuning round, r00–r04q, was scored with this version.
+- **v1.2:** a pylint-clean reformat of v1.1, so the files pass the repository's `lintonPR` check. No KPI
+  definition, threshold or computed value changed. Checked on the tuning machine: v1.2 reproduces the
+  stored r04q tuning and held-out runs exactly, including every per-frame statistic, the masks and the
+  scene references. The only difference in the output is the `harness_version` field and the `kpi.md`
+  title.
 
 ## Running it
 

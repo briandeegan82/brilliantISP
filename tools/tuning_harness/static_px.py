@@ -1,4 +1,7 @@
-"""Orchestrator tool: find vehicle-fixed (ego body / occluder) pixels by low temporal variation on moving scenes."""
+"""Orchestrator tool: find vehicle-fixed (ego body / occluder) pixels.
+
+They show low temporal variation on moving scenes.
+"""
 import sys
 from pathlib import Path
 
@@ -6,12 +9,14 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import CAMERAS, SCENES, linearize, load_mask, read_raw  # noqa: E402
+from common import (  # noqa: E402  # pylint: disable=wrong-import-position
+    CAMERAS, SCENES, linearize, load_mask, read_raw)
 
 MOVING = ("T1_urban_day", "T3_bridge_sky", "T4_motorway_dusk", "H1_urban_day")
 
 
 def tstd(cam: str) -> np.ndarray:
+    """Median over moving scenes of the per-pixel temporal std of log2 G (half-res)."""
     cls = CAMERAS[cam]
     stds = []
     for sc in MOVING:
@@ -29,7 +34,8 @@ def tstd(cam: str) -> np.ndarray:
     return np.median(np.stack(stds), axis=0)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI: write static_px/<cam>_tstd.npy and a tstd.jpg contact sheet."""
     out = Path(__file__).parent / "static_px"
     out.mkdir(exist_ok=True)
     tiles = []
@@ -46,3 +52,7 @@ if __name__ == "__main__":
         cv2.putText(img, cam, (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
         tiles.append(cv2.resize(img, (480, 300)))
     cv2.imwrite(str(out / "tstd.jpg"), np.hstack(tiles))
+
+
+if __name__ == "__main__":
+    main()

@@ -11,6 +11,9 @@ v1.1 changes vs v1.0: these follow the reviewer audit in `rounds/r00/REVIEW.md`,
 scoring below. The stopping criteria are restated. `ORCHESTRATOR_NOTES.md` carries orchestrator messages, newest
 first: re-read it at the end of every step and before starting any run.
 
+All rounds were run with harness v1.1. The committed harness is v1.2, a lint-only reformat that
+reproduces the v1.1 numbers exactly; see `README.md`.
+
 ## Roles
 - Orchestrator (parent Devin session): owns the data, the frozen harness and this protocol, and relays between agents.
 - Tuner: the only agent that edits ISP code/config, and only in `~/isp_tuning/brilliantISP-tuner` (branch `tuning/3a-stability`).
