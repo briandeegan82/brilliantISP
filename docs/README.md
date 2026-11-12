@@ -52,3 +52,6 @@
   destinations. See `CONFIGURATION.md` for the contract.
 - `blocks/tone_mapping.md` — unified tone-mapping engine contract
   (operators, backends, normalization, migration).
+- `R04Q_CALIBRATION_NOTES.md` — SVS fisheye intrinsics from the vehicle workbook and the
+  derivation of the r04q MVL/MVR metering ROIs.
+- `../tools/tuning_harness/README.md` — frozen KPI harness and protocol used to tune r04q.

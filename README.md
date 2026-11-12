@@ -154,6 +154,8 @@ These scripts are practical templates and may require local path edits before us
 
 - `docs/README.md` - full documentation index
 - `docs/ISP_BLOCKS_AND_TUNING.md` - pipeline order and tuning guide, incl. smooth AE, AWB filtering, metering ROI and `rgb_norm`
+- `docs/R04Q_CALIBRATION_NOTES.md` - SVS fisheye intrinsics and how the r04q MVL/MVR metering ROIs were derived
+- `tools/tuning_harness/README.md` - frozen KPI harness and protocol used to tune r04q
 - `docs/ARCHITECTURE.md` - native engine API, contracts and AE controller
 - `docs/CONFIGURATION.md` - config loading, `extends`, validation and migration
 - `docs/RAW_INPUT.md` - RAW decode contract (`sensor_info` storage fields)
